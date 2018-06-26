@@ -2,7 +2,7 @@
 
 # caution: testing won't work on windows, see README
 
-PYTHON ?= python
+PYTHON ?= python3
 CYTHON ?= cython
 PYTEST ?= pytest
 CTAGS ?= ctags
@@ -42,7 +42,7 @@ trailing-spaces:
 	find sklearn -name "*.py" -exec perl -pi -e 's/[ \t]*$$//' {} \;
 
 cython:
-	python setup.py build_src
+	python3 setup.py build_src
 
 ctags:
 	# make tags for symbol based navigation in emacs and vim

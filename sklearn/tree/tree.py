@@ -59,7 +59,7 @@ DOUBLE = _tree.DOUBLE
 
 CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy}
 CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE,
-                "mae": _criterion.MAE}
+                "mae": _criterion.MAE, "mse2": _criterion.MSE2}
 
 DENSE_SPLITTERS = {"best": _splitter.BestSplitter,
                    "random": _splitter.RandomSplitter}
@@ -93,7 +93,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                  min_impurity_decrease,
                  min_impurity_split,
                  class_weight=None,
-                 presort=False):
+                 presort=False,
+                 P_reg=None):
         self.criterion = criterion
         self.splitter = splitter
         self.max_depth = max_depth
@@ -107,6 +108,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         self.min_impurity_split = min_impurity_split
         self.class_weight = class_weight
         self.presort = presort
+
+        self.P_reg = P_reg
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):
@@ -331,6 +334,11 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
             else:
                 criterion = CRITERIA_REG[self.criterion](self.n_outputs_,
                                                          n_samples)
+
+            if self.P_reg is None:
+                P_reg = np.zeros((n_samples, self.n_outputs_))
+                criterion._set_preg(P_reg)
+                # Cant' access criterion.P_reg ?!
 
         SPLITTERS = SPARSE_SPLITTERS if issparse(X) else DENSE_SPLITTERS
 

@@ -38,6 +38,12 @@ from ._utils cimport PriorityHeapRecord
 from ._utils cimport safe_realloc
 from ._utils cimport sizet_ptr_to_ndarray
 
+#
+# _arr_lib import
+#
+from ._arr_lib cimport cydot, floating
+
+
 cdef extern from "numpy/arrayobject.h":
     object PyArray_NewFromDescr(object subtype, np.dtype descr,
                                 int nd, np.npy_intp* dims,
@@ -197,6 +203,11 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
         cdef Stack stack = Stack(INITIAL_STACK_SIZE)
         cdef StackRecord stack_record
+
+
+        cdef SIZE_t n_samples = splitter.n_samples
+        cdef SIZE_t n_outputs = tree.n_outputs
+        cdef np.ndarray[:, :] P_reg = np.zeros((n_samples, n_outputs), dtype=floating)
 
         with nogil:
             # push root node onto stack
