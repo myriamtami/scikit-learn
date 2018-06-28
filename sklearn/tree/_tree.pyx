@@ -41,7 +41,9 @@ from ._utils cimport sizet_ptr_to_ndarray
 #
 # _arr_lib import
 #
-from ._arr_lib cimport cydot, floating
+from ._arr_lib cimport cydot
+
+from libc.stdio cimport printf
 
 
 cdef extern from "numpy/arrayobject.h":
@@ -88,6 +90,12 @@ NODE_DTYPE = np.dtype({
         <Py_ssize_t> &(<Node*> NULL).weighted_n_node_samples
     ]
 })
+
+import scipy.stats as stats
+import numpy as np
+def tryme():
+    a = stats.norm(0,2).cdf(3)
+    print(a)
 
 # =============================================================================
 # TreeBuilder
@@ -205,11 +213,29 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         cdef StackRecord stack_record
 
 
+        # @Debug
         cdef SIZE_t n_samples = splitter.n_samples
         cdef SIZE_t n_outputs = tree.n_outputs
-        cdef np.ndarray[:, :] P_reg = np.zeros((n_samples, n_outputs), dtype=floating)
+        P_reg_np = np.zeros((n_samples, n_outputs), dtype=np.float64)
+        P_reg_T_np = P_reg_np.T
+        cdef double[:,:] P_reg = P_reg_np
+        cdef double[:,:] P_reg_T = P_reg_np.T
+        print('shape %d, %d' %  (P_reg_np.shape[0], P_reg_np.shape[1]))
+        print('shape T %d, %d' %  (P_reg_T_np.shape[0], P_reg_T_np.shape[1]))
+        cdef np.ndarray[double, ndim=1] R_temp
 
         with nogil:
+
+            # @Debug
+            printf('shape %d %d\n', P_reg.shape[0], P_reg.shape[1])
+            printf('shape T %d %d \n', P_reg_T.shape[0], P_reg_T.shape[1])
+            with gil: # need to acuire the gil for "python operation"
+                R_temp = np.empty(n_samples, dtype=np.double)
+                print(P_reg[0], P_reg[1], R_temp[1])
+                R_temp[1] = cydot(P_reg[0], P_reg[1],1)
+                print(R_temp[1])
+                tryme()
+
             # push root node onto stack
             rc = stack.push(0, n_node_samples, 0, _TREE_UNDEFINED, 0, INFINITY, 0)
             if rc == -1:

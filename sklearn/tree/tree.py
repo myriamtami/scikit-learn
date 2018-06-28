@@ -335,10 +335,11 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                 criterion = CRITERIA_REG[self.criterion](self.n_outputs_,
                                                          n_samples)
 
-            if self.P_reg is None:
-                P_reg = np.zeros((n_samples, self.n_outputs_))
-                criterion._set_preg(P_reg)
-                # Cant' access criterion.P_reg ?!
+            #@DEBUG/REMOVE
+            #if self.P_reg is None:
+            #    P_reg = np.zeros((n_samples, self.n_outputs_))
+            #    criterion._set_preg(P_reg)
+            #    # Cant' access criterion.P_reg ?!
 
         SPLITTERS = SPARSE_SPLITTERS if issparse(X) else DENSE_SPLITTERS
 

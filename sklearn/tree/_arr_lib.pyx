@@ -141,37 +141,38 @@ cdef extern from "cblas.h":
 @cython.boundscheck(False)
 @cython.wraparound(False)
 @cython.cdivision(True)
-cpdef double cydot(floating[::1] x, floating[::1] y, int dim):
-#cpdef double cydot(double[::1] x, double[::1] y, int dim):
+#cpdef double cydot(floating[::1] x, floating[::1] y, int dim):
+cpdef double cydot(double[:] x, double[:] y, int dim):
 
-    # fused types version of BLAS functions
-    cdef DOT dot
-    cdef AXPY axpy
-    cdef ASUM asum
+    ## fused types version of BLAS functions
+    #cdef DOT dot
+    #cdef AXPY axpy
+    #cdef ASUM asum
 
-    if floating is float:
-        dtype = np.float32
-        dot = sdot
-        axpy = saxpy
-        asum = sasum
-    else:
-        dtype = np.float64
-        dot = ddot
-        axpy = daxpy
-        asum = dasum
-    #dot = ddot
+    #if floating is float:
+    #    dtype = np.float32
+    #    dot = sdot
+    #    axpy = saxpy
+    #    asum = sasum
+    #else:
+    #    dtype = np.float64
+    #    dot = ddot
+    #    axpy = daxpy
+    #    asum = dasum
+    ##dot = ddot
 
     ## get the data information into easy vars
     #cdef unsigned int n_samples = X.shape[0]
     #cdef unsigned int n_features = X.shape[1]
 
     # Get the pointers.
-    #cdef double* x_ptr = &x[0]
-    #cdef double* y_ptr = &y[0]
-    cdef floating* x_ptr = &x[0]
-    cdef floating* y_ptr = &y[0]
+    #cdef floating* x_ptr = &x[0]
+    #cdef floating* y_ptr = &y[0]
+    cdef double* x_ptr = &x[0]
+    cdef double* y_ptr = &y[0]
 
-    return dot(dim, x_ptr, 1, y_ptr, 1)
+    #return dot(dim, x_ptr, 1, y_ptr, 1)
+    return ddot(dim, x_ptr, 1, y_ptr, 1)
 
 
 

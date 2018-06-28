@@ -17,5 +17,5 @@ ctypedef void (*AXPY)(int N, floating alpha, floating *X, int incX,
                       floating *Y, int incY) nogil
 ctypedef floating (*ASUM)(int N, floating *X, int incX) nogil
 
-#cpdef double cydot(double[::1] x, double[::1] y, int dim)
-cpdef double cydot(floating[::1] x, floating[::1] y, int dim)
+#cpdef double cydot(floating[::1] x, floating[::1] y, int dim)
+cpdef double cydot(double[:] x, double[:] y, int dim)
