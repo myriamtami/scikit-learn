@@ -91,11 +91,34 @@ NODE_DTYPE = np.dtype({
     ]
 })
 
+
+#
+# @Debuig/mse2
+#
+
 import scipy.stats as stats
 import numpy as np
 def tryme():
     a = stats.norm(0,2).cdf(3)
     print(a)
+
+
+from libcpp.vector cimport vector
+#cpdef node_parent_path(SIZE_t parent):
+#
+#    #cdef Node* parent_pt = &self.nodes[parent]
+#
+#
+#    #while node.impurity != INFINITY:
+#    cdef vector[int] vect
+#    cdef int i, x
+#    print('zeraedf')
+#    for i in range(10):
+#        vect.push_back(i)
+#    for i in range(10):
+#        print(vect[i])
+#    for x in vect:
+#        print(x)
 
 # =============================================================================
 # TreeBuilder
@@ -286,9 +309,14 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                     rc = -1
                     break
 
+                # Compute parent path for each node (@debug used fofr mse2)
+                #with gil:
+                #    node_parent_path(parent)
+
                 # Store value for all nodes, to facilitate tree/model
                 # inspection and interpretation
                 splitter.node_value(tree.value + node_id * tree.value_stride)
+
 
                 if not is_leaf:
                     # Push right child on stack
@@ -782,6 +810,8 @@ cdef class Tree:
                 self.nodes[parent].left_child = node_id
             else:
                 self.nodes[parent].right_child = node_id
+
+            node.parent = parent
 
         if is_leaf:
             node.left_child = _TREE_LEAF

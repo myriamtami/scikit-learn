@@ -62,7 +62,9 @@ CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE,
                 "mae": _criterion.MAE, "mse2": _criterion.MSE2}
 
 DENSE_SPLITTERS = {"best": _splitter.BestSplitter,
-                   "random": _splitter.RandomSplitter}
+                   "random": _splitter.RandomSplitter,
+                   "best2": _splitter.BestSplitter2
+                  }
 
 SPARSE_SPLITTERS = {"best": _splitter.BestSparseSplitter,
                     "random": _splitter.RandomSparseSplitter}
@@ -442,11 +444,19 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         # Regression
         else:
-            if self.n_outputs_ == 1:
-                return proba[:, 0]
 
+            if self.criterion in ('mse2'):
+                if self.n_outputs_ == 1:
+                    return proba[:, 0]
+
+                else:
+                    return proba[:, :, 0]
             else:
-                return proba[:, :, 0]
+                if self.n_outputs_ == 1:
+                    return proba[:, 0]
+
+                else:
+                    return proba[:, :, 0]
 
     def apply(self, X, check_input=True):
         """

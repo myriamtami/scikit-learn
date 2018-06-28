@@ -49,6 +49,7 @@ cdef class Criterion:
     cdef double* sum_left           # Same as above, but for the left side of the split
     cdef double* sum_right          # same as above, but for the right side of the split
 
+
     # The criterion object is maintained such that left and right collected
     # statistics correspond to samples[start:pos] and samples[pos:end].
 
