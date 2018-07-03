@@ -22,6 +22,7 @@ from libc.stdlib cimport free
 from libc.math cimport fabs
 from libc.string cimport memcpy
 from libc.string cimport memset
+from libc.stdio cimport printf #
 
 import numpy as np
 cimport numpy as np
@@ -43,7 +44,6 @@ from ._utils cimport sizet_ptr_to_ndarray
 #
 from ._arr_lib cimport cydot
 
-from libc.stdio cimport printf
 
 
 cdef extern from "numpy/arrayobject.h":
@@ -102,23 +102,22 @@ def tryme():
     a = stats.norm(0,2).cdf(3)
     print(a)
 
+#from libcpp.vector cimport vector
 
-from libcpp.vector cimport vector
-#cpdef node_parent_path(SIZE_t parent):
-#
-#    #cdef Node* parent_pt = &self.nodes[parent]
-#
-#
-#    #while node.impurity != INFINITY:
-#    cdef vector[int] vect
-#    cdef int i, x
-#    print('zeraedf')
-#    for i in range(10):
-#        vect.push_back(i)
-#    for i in range(10):
-#        print(vect[i])
-#    for x in vect:
-#        print(x)
+# copy declarations from libcpp.vector to allow nogil
+#cdef extern from "<vector>" namespace "std":
+#    cdef cppclass vector[T]:
+#        void push_back(T&) nogil
+#        size_t size()
+#        T& operator[](size_t)
+
+cdef void  node_parent_path(SIZE_t parent_id, int depth):
+
+    cdef Node* parent = &self.nodes[parent_id]
+    cdef 
+
+
+    while parent.impurity != INFINITY:
 
 # =============================================================================
 # TreeBuilder
@@ -310,8 +309,8 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                     break
 
                 # Compute parent path for each node (@debug used fofr mse2)
-                #with gil:
-                #    node_parent_path(parent)
+                with gil:
+                    node_parent_path(parent, depth+1) # tree.nodes
 
                 # Store value for all nodes, to facilitate tree/model
                 # inspection and interpretation

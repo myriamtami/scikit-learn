@@ -18,7 +18,7 @@ print('Out Y', Y)
 
 
 reg = tree.DecisionTreeRegressor(criterion='mse2',
-                                 splitter='best2') # why best2 ?!
+                                 splitter='best2')
 reg = reg.fit(X, Y)
 
 print(reg)
