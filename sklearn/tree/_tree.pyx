@@ -18,7 +18,7 @@
 
 from cpython cimport Py_INCREF, PyObject
 
-from libc.stdlib cimport free
+from libc.stdlib cimport free, malloc
 from libc.math cimport fabs
 from libc.string cimport memcpy
 from libc.string cimport memset
@@ -98,9 +98,63 @@ NODE_DTYPE = np.dtype({
 
 import scipy.stats as stats
 import numpy as np
-def tryme():
-    a = stats.norm(0,2).cdf(3)
-    print(a)
+
+
+cdef inline feat_bound(Coord* path, SIZE_t feature):
+    ''' Return the unidimensoin region for the given feature. '''
+
+    cdef bint is_left = path[0].is_left
+    cdef DOUBLE_t thr_a = path[0].threshold
+    cdef DOUBLE_t thr_b = 1000001 # doh, fused type !?
+
+
+    if path[0].is_root == 1:
+        if is_left:
+            return thr_b, thr_a
+        else:
+            return thr_a, thr_b
+
+    cdef int i = 1
+
+    while True:
+        #printf("%d %f", path[i].feature, path[i].threshold)
+
+        if path[i].feature == feature:
+            if is_left:
+                if path[i].threshold < thr_a:
+                    thr_b = path[i].threshold
+            else:
+                if path[i].threshold > thr_a:
+                    thr_b = path[i].threshold
+
+
+        if path[i].is_root == 1:
+            break
+        else:
+            i += 1
+
+    if is_left:
+        return thr_b, thr_a
+    else:
+        return thr_a, thr_b
+
+def prob_region(double x, double left_f, double right_f):
+
+    g = stats.norm(x, 0.05)
+
+    if left_f >= 1000000:
+        return g.cdf(right_f)
+    elif right_f >= 1000000:
+        return 1 - g.cdf(left_f)
+    else:
+        return g.cdf(right_f) - g.cdf(left_f)
+
+def compute_gamma(np.ndarray preg, np.ndarray y):
+    gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+    print('preg', preg)
+    print('y', y)
+    print('gmma', gmma)
+    return gmma
 
 #from libcpp.vector cimport vector
 
@@ -111,13 +165,6 @@ def tryme():
 #        size_t size()
 #        T& operator[](size_t)
 
-cdef void  node_parent_path(SIZE_t parent_id, int depth):
-
-    cdef Node* parent = &self.nodes[parent_id]
-    cdef 
-
-
-    while parent.impurity != INFINITY:
 
 # =============================================================================
 # TreeBuilder
@@ -212,6 +259,8 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         # Recursive partition (without actual recursion)
         splitter.init(X, y, sample_weight_ptr, X_idx_sorted)
 
+        tree.extra_init(splitter.X_sample_stride, splitter.X_feature_stride, splitter.y)
+
         cdef SIZE_t start
         cdef SIZE_t end
         cdef SIZE_t depth
@@ -251,12 +300,12 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
             # @Debug
             printf('shape %d %d\n', P_reg.shape[0], P_reg.shape[1])
             printf('shape T %d %d \n', P_reg_T.shape[0], P_reg_T.shape[1])
-            with gil: # need to acuire the gil for "python operation"
-                R_temp = np.empty(n_samples, dtype=np.double)
-                print(P_reg[0], P_reg[1], R_temp[1])
-                R_temp[1] = cydot(P_reg[0], P_reg[1],1)
-                print(R_temp[1])
-                tryme()
+            #with gil: # need to acuire the gil for "python operation"
+            #    R_temp = np.empty(n_samples, dtype=np.double)
+            #    print(P_reg[0], P_reg[1], R_temp[1])
+            #    R_temp[1] = cydot(P_reg[0], P_reg[1],1)
+            #    print(R_temp[1])
+            #
 
             # push root node onto stack
             rc = stack.push(0, n_node_samples, 0, _TREE_UNDEFINED, 0, INFINITY, 0)
@@ -308,9 +357,6 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                     rc = -1
                     break
 
-                # Compute parent path for each node (@debug used fofr mse2)
-                with gil:
-                    node_parent_path(parent, depth+1) # tree.nodes
 
                 # Store value for all nodes, to facilitate tree/model
                 # inspection and interpretation
@@ -329,6 +375,10 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                                     split.impurity_left, n_constant_features)
                     if rc == -1:
                         break
+                else:
+                    # Compute parent path 
+                    tree._add_parent_path(node_id, depth, is_left) # is_left not used for leaves
+
 
                 if depth > max_depth_seen:
                     max_depth_seen = depth
@@ -338,6 +388,27 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
             if rc >= 0:
                 tree.max_depth = max_depth_seen
+
+            # end of while
+            
+        # end of nogil
+        
+        
+
+        # For prediction create A Preg!
+        safe_realloc(&tree.preg, n_samples * tree.n_regions)
+        tree._compute_preg(tree.preg, splitter.X, tree.n_samples)
+
+
+        cdef np.ndarray gmma
+        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
+                             tree._get_y_ndarray()[:tree.n_samples])
+
+
+        safe_realloc(&tree.gmma, tree.n_regions)
+        tree.gmma = <DOUBLE_t*>gmma.data
+
+
         if rc == -1:
             raise MemoryError()
 
@@ -622,6 +693,7 @@ cdef class Tree:
         weighted_n_node_samples[i] holds the weighted number of training samples
         reaching node i.
     """
+
     # Wrap for outside world.
     # WARNING: these reference the current `nodes` and `value` buffers, which
     # must not be freed by a subsequent memory allocation.
@@ -658,21 +730,31 @@ cdef class Tree:
         def __get__(self):
             return self._get_node_ndarray()['weighted_n_node_samples'][:self.node_count]
 
+    property preg:
+        def __get__(self):
+            return self._get_preg_ndarray()[:self.n_samples]
+    property y:
+        def __get__(self):
+            return self._get_y_ndarray()[:self.n_samples]
+
     property value:
         def __get__(self):
             return self._get_value_ndarray()[:self.node_count]
 
     def __cinit__(self, int n_features, np.ndarray[SIZE_t, ndim=1] n_classes,
-                  int n_outputs):
+                  int n_samples, int n_outputs):
         """Constructor."""
         # Input/Output layout
         self.n_features = n_features
+        self.n_samples = n_samples
         self.n_outputs = n_outputs
         self.n_classes = NULL
         safe_realloc(&self.n_classes, n_outputs)
 
         self.max_n_classes = np.max(n_classes)
         self.value_stride = n_outputs * self.max_n_classes
+
+        self.n_regions = 1
 
         cdef SIZE_t k
         for k in range(n_outputs):
@@ -685,12 +767,44 @@ cdef class Tree:
         self.value = NULL
         self.nodes = NULL
 
+        self.X = NULL # free in splitter
+        #self.samples = NULL # free in splitter
+        self.X_sample_stride = 0
+        self.X_feature_stride = 0
+
+
+        self.y = NULL
+        self.preg = NULL
+        self.gmma = NULL
+
+    cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride,
+                       DOUBLE_t* y):
+        ''' Extra Info to access data. '''
+        self.X_sample_stride = X_sample_stride
+        self.X_feature_stride = X_feature_stride
+
+        # I don't get why the first value of y (y[O] is lost 
+        # when y is not deep copied ?!
+        safe_realloc(&self.y, self.n_samples)
+        memcpy(self.y, y, sizeof(DOUBLE_t)*self.n_samples)
+        #self.y = y
+
+        return 0
+
     def __dealloc__(self):
         """Destructor."""
         # Free all inner structures
         free(self.n_classes)
         free(self.value)
+
+        cdef SIZE_t i
+        for i in range(self.node_count):
+            free(self.nodes[i].path)
         free(self.nodes)
+
+        free(self.preg)
+        free(self.gmma)
+        free(self.y)
 
     def __reduce__(self):
         """Reduce re-implementation, for pickling."""
@@ -783,6 +897,36 @@ cdef class Tree:
         self.capacity = capacity
         return 0
 
+    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, SIZE_t is_left)  nogil except -1:
+        
+        cdef Node* node = &self.nodes[node_id]
+        cdef Node* parent = &self.nodes[node.parent]
+
+        #safe_realloc(&node.path, depth)
+        node.path = <Coord *> malloc(depth * sizeof(Coord))
+        cdef Coord* path = node.path
+        cdef Coord* coord
+        
+        node.depth = depth
+
+        cdef SIZE_t i
+        for i in range(0, depth):
+        #while node.parent != _TREE_UNDEFINED:
+            coord  = &path[i]
+
+            coord.feature = parent.feature
+            coord.is_left = parent.is_left
+            coord.threshold = parent.threshold
+            if i == depth-1:
+                coord.is_root = 1
+            else:
+                coord.is_root = 0
+
+            parent = &self.nodes[parent.parent]
+            #i += 1
+
+        return 0
+
     cdef SIZE_t _add_node(self, SIZE_t parent, bint is_left, bint is_leaf,
                           SIZE_t feature, double threshold, double impurity,
                           SIZE_t n_node_samples,
@@ -812,6 +956,10 @@ cdef class Tree:
 
             node.parent = parent
 
+        node.is_left = is_left
+        node.parent = parent
+        node.path = NULL
+
         if is_leaf:
             node.left_child = _TREE_LEAF
             node.right_child = _TREE_LEAF
@@ -822,6 +970,8 @@ cdef class Tree:
             # left_child and right_child will be set later
             node.feature = feature
             node.threshold = threshold
+            self.n_regions += 1
+
 
         self.node_count += 1
 
@@ -834,6 +984,43 @@ cdef class Tree:
         if self.n_outputs == 1:
             out = out.reshape(X.shape[0], self.max_n_classes)
         return out
+
+    cpdef np.ndarray predict2(self, object X):
+        """Predict target for X based on probabilistic region"""
+
+        # Check input
+        if not isinstance(X, np.ndarray):
+            raise ValueError("X should be in np.ndarray format, got %s"
+                             % type(X))
+
+        if X.dtype != DTYPE:
+            raise ValueError("X.dtype should be np.float32, got %s" % X.dtype)
+
+        # Extract input
+        cdef np.ndarray X_ndarray = X
+        cdef DTYPE_t* X_ptr = <DTYPE_t*> X_ndarray.data
+        cdef SIZE_t X_sample_stride = <SIZE_t> X.strides[0] / <SIZE_t> X.itemsize
+        cdef SIZE_t X_fx_stride = <SIZE_t> X.strides[1] / <SIZE_t> X.itemsize
+        cdef SIZE_t n_samples = X.shape[0]
+
+        # Initialize output
+        cdef np.ndarray[DOUBLE_t] predictions_arr = np.zeros((n_samples,), dtype=np.float64)
+        cdef DOUBLE_t* predictions = <DOUBLE_t*> predictions_arr.data
+
+        cdef DOUBLE_t* preg_x = NULL
+        safe_realloc(&preg_x, n_samples * self.n_regions)
+
+
+        self._compute_preg(preg_x, X_ptr, n_samples)
+
+        cdef int k, i
+        for i in range(self.n_samples):
+
+            for k in range(self.n_regions):
+                printf('final: %f %f \n',self.gmma[k],  preg_x[i*self.X_sample_stride + k])
+                predictions[i] += self.gmma[k] * preg_x[i*self.X_sample_stride + k]
+
+        return predictions_arr
 
     cpdef np.ndarray apply(self, object X):
         """Finds the terminal region (=leaf node) for each sample in X."""
@@ -868,6 +1055,8 @@ cdef class Tree:
         cdef Node* node = NULL
         cdef SIZE_t i = 0
 
+        cdef Coord* path 
+
         with nogil:
             for i in range(n_samples):
                 node = self.nodes
@@ -880,9 +1069,55 @@ cdef class Tree:
                     else:
                         node = &self.nodes[node.right_child]
 
+                # @Debug => check the path of leaf nodes.
+                #path = node.path
+                #for j in range(node.depth):
+                #    printf('path:%d -  %d, %d, %f\n', j, path[j].feature,
+                #          path[j].is_left, path[j].threshold)
+
                 out_ptr[i] = <SIZE_t>(node - self.nodes)  # node offset
 
         return out
+
+    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples):
+        ''' Warning will not work with multiple output AND extra weight. '''
+
+        #cdef DTYPE_t* X = <DTYPE_t*>X
+
+        cdef SIZE_t n_features = self.n_features
+        cdef SIZE_t X_sample_stride = self.X_sample_stride
+        cdef SIZE_t X_feature_stride = self.X_feature_stride
+        cdef Node* node = NULL
+        # Or an array: cdef Coord* paths[self.n_regions]
+        cdef Coord** paths = <Coord**> malloc(self.n_regions * sizeof(SIZE_t))
+        #cdef Coord** paths = <SIZE_t *> malloc(self.n_regions * sizeof(SIZE_t))
+        cdef int i,k,f,nid
+
+        # Get path of region
+        i = 0
+        for nid in range(self.node_count):
+            node = &self.nodes[nid]
+            if node.left_child == _TREE_LEAF:
+                paths[i] = node.path
+                i += 1
+        
+        cdef DOUBLE_t pb, left_f, right_f
+
+        for i in range(n_samples):
+            for k in range(self.n_regions):
+                pb = 1
+                for f in range(n_features):
+                    left_f, right_f = feat_bound(paths[k], f) # compute each time (put in an array!!!)
+                    pb *= prob_region(X[X_sample_stride*i + f*X_feature_stride], 
+                                      left_f, right_f)
+                    # @Debug: check Preg assignement.
+                    printf('pt: %d|%f, feat: %d,|left:%f,  right:%f|  prob: %f\n', i,X[X_sample_stride*i + f*X_feature_stride], f, left_f, right_f, pb )
+                preg[i*self.n_regions + k] = pb
+
+
+        
+        free(paths)
+
 
     cdef inline np.ndarray _apply_sparse_csr(self, object X):
         """Finds the terminal region (=leaf node) for each sample in sparse X.
@@ -1189,6 +1424,40 @@ cdef class Tree:
         arr = PyArray_NewFromDescr(np.ndarray, <np.dtype> NODE_DTYPE, 1, shape,
                                    strides, <void*> self.nodes,
                                    np.NPY_DEFAULT, None)
+        Py_INCREF(self)
+        arr.base = <PyObject*> self
+        return arr
+
+    cdef np.ndarray _get_preg_ndarray(self):
+        """Wraps value as a 2-d NumPy array.
+
+        The array keeps a reference to this Tree, which manages the underlying
+        memory.
+        """
+        cdef np.npy_intp shape[2]
+        shape[0] = <np.npy_intp> self.n_samples
+        shape[1] = <np.npy_intp> self.n_regions
+        cdef np.ndarray arr
+        arr = np.PyArray_SimpleNewFromData(2, shape, np.NPY_DOUBLE, self.preg)
+        Py_INCREF(self)
+        arr.base = <PyObject*> self
+        return arr
+
+    cdef np.ndarray _get_y_ndarray(self):
+        """Wraps value as a 1-d NumPy array.
+
+        The array keeps a reference to this Tree, which manages the underlying
+        memory.
+        """
+        cdef np.npy_intp shape[1]
+        shape[0] = <np.npy_intp> self.n_samples
+        cdef np.npy_intp strides[1]
+        strides[0] = sizeof(DOUBLE_t)
+        cdef np.ndarray arr
+        arr = np.PyArray_SimpleNewFromData(1, shape, np.NPY_DOUBLE, self.y)
+        #arr = PyArray_NewFromDescr(np.ndarray, np.float64, 1, shape,
+        #                           strides, <void*> self.y,
+        #                           np.NPY_DEFAULT, None)
         Py_INCREF(self)
         arr.base = <PyObject*> self
         return arr

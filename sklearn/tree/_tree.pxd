@@ -34,6 +34,16 @@ cdef struct Node:
     SIZE_t n_node_samples                # Number of samples at the node
     DOUBLE_t weighted_n_node_samples     # Weighted number of samples at the node
 
+    bint is_left
+    SIZE_t depth
+    Coord* path
+
+cdef struct Coord:
+    bint is_left
+    SIZE_t feature
+    DOUBLE_t threshold
+    SIZE_t is_root
+
 
 cdef class Tree:
     # The Tree object is a binary tree structure constructed by the
@@ -55,6 +65,17 @@ cdef class Tree:
     cdef double* value                   # (capacity, n_outputs, max_n_classes) array of values
     cdef SIZE_t value_stride             # = n_outputs * max_n_classes
 
+    cdef SIZE_t n_samples       # X.shape[0]
+    cdef SIZE_t n_regions   # Number of leaf nodes
+    cdef DOUBLE_t* preg     # array (n_samples, n_regions)
+    cdef DOUBLE_t* gmma     # array (n_samples, n_regions)
+
+    cdef DTYPE_t* X
+    cdef SIZE_t X_sample_stride
+    cdef SIZE_t X_feature_stride
+    cdef DOUBLE_t* y # ignore stride
+
+
     # Methods
     cdef SIZE_t _add_node(self, SIZE_t parent, bint is_left, bint is_leaf,
                           SIZE_t feature, double threshold, double impurity,
@@ -65,8 +86,11 @@ cdef class Tree:
 
     cdef np.ndarray _get_value_ndarray(self)
     cdef np.ndarray _get_node_ndarray(self)
+    cdef np.ndarray _get_preg_ndarray(self)
+    cdef np.ndarray _get_y_ndarray(self)
 
     cpdef np.ndarray predict(self, object X)
+    cpdef np.ndarray predict2(self, object X)
 
     cpdef np.ndarray apply(self, object X)
     cdef np.ndarray _apply_dense(self, object X)
@@ -77,6 +101,10 @@ cdef class Tree:
     cdef object _decision_path_sparse_csr(self, object X)
 
     cpdef compute_feature_importances(self, normalize=*)
+
+    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, SIZE_t is_left)  nogil except -1
+    cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride, DOUBLE_t* y)
+    cdef int _compute_preg(self, DOUBLE_t* preg, DTYPE_t* X, SIZE_t n_samples)
 
 
 # =============================================================================

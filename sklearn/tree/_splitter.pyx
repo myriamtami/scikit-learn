@@ -241,9 +241,6 @@ cdef class Splitter:
 
 
 cdef class BaseDenseSplitter(Splitter):
-    cdef DTYPE_t* X
-    cdef SIZE_t X_sample_stride
-    cdef SIZE_t X_feature_stride
 
     cdef np.ndarray X_idx_sorted
     cdef INT32_t* X_idx_sorted_ptr

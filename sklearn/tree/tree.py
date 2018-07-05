@@ -354,7 +354,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                                                 random_state,
                                                 self.presort)
 
-        self.tree_ = Tree(self.n_features_, self.n_classes_, self.n_outputs_)
+        self.tree_ = Tree(self.n_features_, self.n_classes_,
+                          n_samples, self.n_outputs_)
 
         # Use BestFirst if max_leaf_nodes given; use DepthFirst otherwise
         if max_leaf_nodes < 0:
@@ -398,6 +399,15 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                              % (self.n_features_, n_features))
 
         return X
+
+    def predict2(self, X, check_input=True):
+        check_is_fitted(self, 'tree_')
+        X = self._validate_X_predict(X, check_input)
+        n_samples = X.shape[0]
+
+        proba = self.tree_.predict2(X)
+        return proba
+
 
     def predict(self, X, check_input=True):
         """Predict class or regression value for X.
