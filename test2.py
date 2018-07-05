@@ -18,10 +18,13 @@ if __name__ == '__main__':
     print(X.shape)
     print(y.shape)
 
+    max_depth = 5
+    #max_depth = 100
+
     # Fit
     regr_1 = tree.DecisionTreeRegressor(criterion='mse2',
                                         splitter='best2',
-                                        max_depth=5)
+                                        max_depth=max_depth)
     regr_1.fit(X, y)
 
     # Predict

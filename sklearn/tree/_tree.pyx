@@ -107,6 +107,13 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
     cdef DOUBLE_t thr_a = path[0].threshold
     cdef DOUBLE_t thr_b = 1000001 # doh, fused type !?
 
+    cdef DOUBLE_t temp_th
+    if is_left:
+        temp_th = -thr_b
+    else:
+        temp_th = thr_b
+
+
 
     if path[0].is_root == 1:
         if is_left:
@@ -121,11 +128,13 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
 
         if path[i].feature == feature:
             if is_left:
-                if path[i].threshold < thr_a:
+                if path[i].threshold < thr_a and path[i].threshold > temp_th:
                     thr_b = path[i].threshold
+                    temp_th = thr_b
             else:
-                if path[i].threshold > thr_a:
+                if path[i].threshold > thr_a and path[i].threshold < temp_th:
                     thr_b = path[i].threshold
+                    temp_th = thr_b
 
 
         if path[i].is_root == 1:
