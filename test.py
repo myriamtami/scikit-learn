@@ -9,16 +9,18 @@ print(sklearn.__path__)
 
 # @Warning: don't work with sparse matrix, not implemented for now.
 X = [[0, 0], [2, 2], [4,4]]
+#X = [[0], [2], [4]]
 Y = [0.5, 2.5, 4.5]
 #Y = [[0.5,0.6], [2.5,2.3], [4.5, 2.2]]
-sigmas = np.random.random(2) * (5 - 0) + 0
+sigmas = 0.00000001
 
 print('data X', X)
 print('Out Y', Y)
 
 
 reg = tree.DecisionTreeRegressor(criterion='mse2',
-                                 splitter='best2')
+                                 splitter='best2',
+                                 tol=sigmas)
 reg = reg.fit(X, Y)
 
 t = reg.tree_
@@ -36,10 +38,17 @@ print('Preg', t.preg)
 print(reg)
 
 new = [[0.4, 0.7],
-       [2.1,2.2],
-       [10,10],
-       [0,0]
+       [2.1, 2.2],
+       [10,  10],
+       [0,   0]
       ]
+
+#new = [[0.4],
+#       [2.1],
+#       [10],
+#       [0],
+#      ]
+
 
 print('data new', new)
 print('predict 1:', reg.predict(new))

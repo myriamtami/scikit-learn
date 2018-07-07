@@ -42,7 +42,7 @@ cdef struct Coord:
     bint is_left
     SIZE_t feature
     DOUBLE_t threshold
-    SIZE_t is_root
+    bint is_root
 
 
 cdef class Tree:
@@ -53,6 +53,7 @@ cdef class Tree:
     # Input/Output layout
     cdef public SIZE_t n_features        # Number of features in X
     cdef SIZE_t* n_classes               # Number of classes in y[:, k]
+    cdef DOUBLE_t* sigmas                # tolerance for X[:,k]
     cdef public SIZE_t n_outputs         # Number of outputs in y
     cdef public SIZE_t max_n_classes     # max(n_classes)
 
@@ -102,7 +103,7 @@ cdef class Tree:
 
     cpdef compute_feature_importances(self, normalize=*)
 
-    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, SIZE_t is_left)  nogil except -1
+    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, bint is_left)  nogil except -1
     cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride, DOUBLE_t* y)
     cdef int _compute_preg(self, DOUBLE_t* preg, DTYPE_t* X, SIZE_t n_samples)
 

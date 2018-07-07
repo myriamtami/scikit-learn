@@ -96,7 +96,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                  min_impurity_split,
                  class_weight=None,
                  presort=False,
-                 P_reg=None):
+                 P_reg=None, tol=None):
         self.criterion = criterion
         self.splitter = splitter
         self.max_depth = max_depth
@@ -112,6 +112,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         self.presort = presort
 
         self.P_reg = P_reg
+        self.tol = tol
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):
@@ -354,8 +355,18 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                                                 random_state,
                                                 self.presort)
 
+
+        # for probabilistic tree
+        if self.tol is None:
+            self.tol = np.ones(self.n_features_) * 0.5
+        elif not isinstance(self.tol, np.ndarray):
+            self.tol = np.ones(self.n_features_) * self.tol
+
+
         self.tree_ = Tree(self.n_features_, self.n_classes_,
-                          n_samples, self.n_outputs_)
+                          n_samples, self.n_outputs_, self.tol)
+
+
 
         # Use BestFirst if max_leaf_nodes given; use DepthFirst otherwise
         if max_leaf_nodes < 0:
@@ -404,6 +415,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         check_is_fitted(self, 'tree_')
         X = self._validate_X_predict(X, check_input)
         n_samples = X.shape[0]
+        n_features = X.shape[1]
+
 
         proba = self.tree_.predict2(X)
         return proba
@@ -1103,7 +1116,7 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
                  max_leaf_nodes=None,
                  min_impurity_decrease=0.,
                  min_impurity_split=None,
-                 presort=False):
+                 presort=False, tol=None):
         super(DecisionTreeRegressor, self).__init__(
             criterion=criterion,
             splitter=splitter,
@@ -1116,7 +1129,7 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
             random_state=random_state,
             min_impurity_decrease=min_impurity_decrease,
             min_impurity_split=min_impurity_split,
-            presort=presort)
+            presort=presort, tol=tol)
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):

@@ -96,75 +96,6 @@ NODE_DTYPE = np.dtype({
 # @Debuig/mse2
 #
 
-import scipy.stats as stats
-import numpy as np
-
-
-cdef inline feat_bound(Coord* path, SIZE_t feature):
-    ''' Return the unidimensoin region for the given feature. '''
-
-    cdef bint is_left = path[0].is_left
-    cdef DOUBLE_t thr_a = path[0].threshold
-    cdef DOUBLE_t thr_b = 1000001 # doh, fused type !?
-
-    cdef DOUBLE_t temp_th
-    if is_left:
-        temp_th = -thr_b
-    else:
-        temp_th = thr_b
-
-
-
-    if path[0].is_root == 1:
-        if is_left:
-            return thr_b, thr_a
-        else:
-            return thr_a, thr_b
-
-    cdef int i = 1
-
-    while True:
-        #printf("%d %f", path[i].feature, path[i].threshold)
-
-        if path[i].feature == feature:
-            if is_left:
-                if path[i].threshold < thr_a and path[i].threshold > temp_th:
-                    thr_b = path[i].threshold
-                    temp_th = thr_b
-            else:
-                if path[i].threshold > thr_a and path[i].threshold < temp_th:
-                    thr_b = path[i].threshold
-                    temp_th = thr_b
-
-
-        if path[i].is_root == 1:
-            break
-        else:
-            i += 1
-
-    if is_left:
-        return thr_b, thr_a
-    else:
-        return thr_a, thr_b
-
-def prob_region(double x, double left_f, double right_f):
-
-    g = stats.norm(x, 0.05)
-
-    if left_f >= 1000000:
-        return g.cdf(right_f)
-    elif right_f >= 1000000:
-        return 1 - g.cdf(left_f)
-    else:
-        return g.cdf(right_f) - g.cdf(left_f)
-
-def compute_gamma(np.ndarray preg, np.ndarray y):
-    gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
-    print('preg', preg)
-    print('y', y)
-    print('gmma', gmma)
-    return gmma
-
 #from libcpp.vector cimport vector
 
 # copy declarations from libcpp.vector to allow nogil
@@ -173,6 +104,87 @@ def compute_gamma(np.ndarray preg, np.ndarray y):
 #        void push_back(T&) nogil
 #        size_t size()
 #        T& operator[](size_t)
+
+import scipy.stats as stats
+import numpy as np
+
+
+cdef inline feat_bound(Coord* path, SIZE_t feature):
+    ''' Return the uni-dimensional region length for the given feature. '''
+
+    cdef bint is_left = path[0].is_left
+    cdef DOUBLE_t thr_a = path[0].threshold
+    cdef DOUBLE_t thr_b
+
+    if is_left:
+        thr_b = -1000000
+    else:
+        thr_b = 1000000
+
+    cdef int i = 1
+    cdef int j = 0
+
+    while True:
+
+        while path[j].feature != feature:
+            j += 1
+            i += 1
+            is_left = path[j].is_left
+            thr_a = path[j].threshold
+
+            if is_left:
+                thr_b = -1000000
+            else:
+                thr_b = 1000000
+
+            if path[j].is_root:
+                break
+
+        if path[j].feature != feature:
+            return -1000000, 1000000
+
+        if path[i].feature == feature:
+            if is_left:
+                if path[i].threshold < thr_a and path[i].threshold > thr_b:
+                    thr_b = path[i].threshold
+            else:
+                if path[i].threshold > thr_a and path[i].threshold < thr_b:
+                    thr_b = path[i].threshold
+
+        if path[i].is_root:
+            break
+        else:
+            i += 1
+
+    if is_left:
+        #print(thr_b, thr_a)
+        return thr_b, thr_a
+    else:
+        #print(thr_a, thr_b)
+        return thr_a, thr_b
+
+def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
+
+    g = stats.norm(x, sigma)
+
+    if left_f <= -1000000:
+        return g.cdf(right_f)
+    elif right_f >= 1000000:
+        return 1 - g.cdf(left_f)
+    else:
+        return g.cdf(right_f) - g.cdf(left_f)
+
+def compute_gamma(np.ndarray preg, np.ndarray y):
+    gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+
+    print('preg (%d,%d)'%(preg.shape[0],preg.shape[1]), preg)
+    print('y (%d)'%(y.shape[0]), y)
+    print('gmma (%d)'%(gmma.shape[0]), gmma)
+
+    print(preg.sum(1))
+    print(preg.sum(0))
+    return gmma
+
 
 
 # =============================================================================
@@ -386,7 +398,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                         break
                 else:
                     # Compute parent path 
-                    tree._add_parent_path(node_id, depth, is_left) # is_left not used for leaves
+                    tree._add_parent_path(node_id, depth, is_left)
 
 
                 if depth > max_depth_seen:
@@ -402,13 +414,13 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
             
         # end of nogil
         
-        
 
-        # For prediction create A Preg!
+        # For prediction create Pr matrix for X
         safe_realloc(&tree.preg, n_samples * tree.n_regions)
         tree._compute_preg(tree.preg, splitter.X, tree.n_samples)
 
 
+        # Compute sigma
         cdef np.ndarray gmma
         gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
                              tree._get_y_ndarray()[:tree.n_samples])
@@ -751,7 +763,7 @@ cdef class Tree:
             return self._get_value_ndarray()[:self.node_count]
 
     def __cinit__(self, int n_features, np.ndarray[SIZE_t, ndim=1] n_classes,
-                  int n_samples, int n_outputs):
+                  int n_samples, int n_outputs, np.ndarray[DOUBLE_t, ndim=1] sigmas):
         """Constructor."""
         # Input/Output layout
         self.n_features = n_features
@@ -759,6 +771,9 @@ cdef class Tree:
         self.n_outputs = n_outputs
         self.n_classes = NULL
         safe_realloc(&self.n_classes, n_outputs)
+
+        self.sigmas = NULL
+        safe_realloc(&self.sigmas, n_features)
 
         self.max_n_classes = np.max(n_classes)
         self.value_stride = n_outputs * self.max_n_classes
@@ -768,6 +783,9 @@ cdef class Tree:
         cdef SIZE_t k
         for k in range(n_outputs):
             self.n_classes[k] = n_classes[k]
+
+        for k in range(n_features):
+            self.sigmas[k] = sigmas[k]
 
         # Inner structures
         self.max_depth = 0
@@ -805,6 +823,7 @@ cdef class Tree:
         # Free all inner structures
         free(self.n_classes)
         free(self.value)
+        free(self.sigmas)
 
         cdef SIZE_t i
         for i in range(self.node_count):
@@ -906,7 +925,57 @@ cdef class Tree:
         self.capacity = capacity
         return 0
 
-    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, SIZE_t is_left)  nogil except -1:
+    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples):
+        ''' Warning will not work with multiple output AND extra weight. '''
+
+        #cdef DTYPE_t* X = <DTYPE_t*>X
+
+        cdef SIZE_t n_features = self.n_features
+        cdef SIZE_t X_sample_stride = self.X_sample_stride
+        cdef SIZE_t X_feature_stride = self.X_feature_stride
+        cdef Node* node = NULL
+
+        # Save this in self to be faster.
+        #cdef Coord** paths = <Coord**> malloc(self.n_regions * sizeof(SIZE_t))
+        # Memoryview, faster
+        cdef  double[:,:,:] regions = np.zeros((self.n_regions, self.n_features, 2), dtype=np.float64)
+        # Old Way
+        #cdef  np.ndarray[DOUBLE_t, ndim=3] regions = np.zeros((self.n_regions, self.n_features, 2), dtype=np.float64)
+
+        cdef DOUBLE_t pb, left_f, right_f, sigma, _pb
+        cdef int i,k,f,nid
+
+        # Get path/length of regions
+        i = 0
+        for nid in range(self.node_count):
+            node = &self.nodes[nid]
+            if node.left_child == _TREE_LEAF:
+                for f in range(n_features):
+                    left_f, right_f = feat_bound(node.path, f)
+                    regions[i, f, 0] = left_f
+                    regions[i, f, 1] = right_f
+                i += 1
+
+        for i in range(n_samples):
+            for k in range(self.n_regions):
+                pb = 1
+                for f in range(n_features):
+                    sigma = self.sigmas[f]
+                    left_f, right_f = regions[k, f]
+                    _pb = prob_region(X[X_sample_stride*i + f*X_feature_stride], 
+                                      left_f, right_f, sigma)
+                    #printf('region %d, feature %d, pr: %f -- left: %f   right: %f\n', k, f, _pb,
+                    #      left_f, right_f) 
+                    
+                    pb = pb * _pb
+                preg[i*self.n_regions + k] = pb
+
+
+        #free(paths)
+        return 0
+
+
+    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, bint is_left)  nogil except -1:
         
         cdef Node* node = &self.nodes[node_id]
         cdef Node* parent = &self.nodes[node.parent]
@@ -915,24 +984,28 @@ cdef class Tree:
         node.path = <Coord *> malloc(depth * sizeof(Coord))
         cdef Coord* path = node.path
         cdef Coord* coord
+        cdef bint curr_is_left = is_left
         
         node.depth = depth
 
         cdef SIZE_t i
         for i in range(0, depth):
-        #while node.parent != _TREE_UNDEFINED:
             coord  = &path[i]
 
-            coord.feature = parent.feature
-            coord.is_left = parent.is_left
-            coord.threshold = parent.threshold
-            if i == depth-1:
-                coord.is_root = 1
-            else:
-                coord.is_root = 0
+            coord.is_left = curr_is_left
 
+            coord.feature = parent.feature
+            coord.threshold = parent.threshold
+
+            if i == depth-1:
+                coord.is_root = True
+                break
+            else:
+                coord.is_root = False
+
+            curr_is_left = parent.is_left
             parent = &self.nodes[parent.parent]
-            #i += 1
+        
 
         return 0
 
@@ -1019,15 +1092,18 @@ cdef class Tree:
         cdef DOUBLE_t* preg_x = NULL
         safe_realloc(&preg_x, n_samples * self.n_regions)
 
-
         self._compute_preg(preg_x, X_ptr, n_samples)
 
-        cdef int k, i
-        for i in range(self.n_samples):
+        cdef int i,k
+        for i in range(n_samples):
 
             for k in range(self.n_regions):
-                printf('final: %f %f \n',self.gmma[k],  preg_x[i*self.X_sample_stride + k])
-                predictions[i] += self.gmma[k] * preg_x[i*self.X_sample_stride + k]
+
+                #printf('final: x%d:%f,  gmma%d:%f pr:%f \n', i, 
+                #       X_ptr[X_sample_stride*i], 
+                #       k,  self.gmma[k],  preg_x[i*self.X_sample_stride + k])
+
+                predictions[i] += self.gmma[k] * preg_x[i*self.n_regions + k]
 
         return predictions_arr
 
@@ -1087,45 +1163,6 @@ cdef class Tree:
                 out_ptr[i] = <SIZE_t>(node - self.nodes)  # node offset
 
         return out
-
-    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples):
-        ''' Warning will not work with multiple output AND extra weight. '''
-
-        #cdef DTYPE_t* X = <DTYPE_t*>X
-
-        cdef SIZE_t n_features = self.n_features
-        cdef SIZE_t X_sample_stride = self.X_sample_stride
-        cdef SIZE_t X_feature_stride = self.X_feature_stride
-        cdef Node* node = NULL
-        # Or an array: cdef Coord* paths[self.n_regions]
-        cdef Coord** paths = <Coord**> malloc(self.n_regions * sizeof(SIZE_t))
-        #cdef Coord** paths = <SIZE_t *> malloc(self.n_regions * sizeof(SIZE_t))
-        cdef int i,k,f,nid
-
-        # Get path of region
-        i = 0
-        for nid in range(self.node_count):
-            node = &self.nodes[nid]
-            if node.left_child == _TREE_LEAF:
-                paths[i] = node.path
-                i += 1
-        
-        cdef DOUBLE_t pb, left_f, right_f
-
-        for i in range(n_samples):
-            for k in range(self.n_regions):
-                pb = 1
-                for f in range(n_features):
-                    left_f, right_f = feat_bound(paths[k], f) # compute each time (put in an array!!!)
-                    pb *= prob_region(X[X_sample_stride*i + f*X_feature_stride], 
-                                      left_f, right_f)
-                    # @Debug: check Preg assignement.
-                    printf('pt: %d|%f, feat: %d,|left:%f,  right:%f|  prob: %f\n', i,X[X_sample_stride*i + f*X_feature_stride], f, left_f, right_f, pb )
-                preg[i*self.n_regions + k] = pb
-
-
-        
-        free(paths)
 
 
     cdef inline np.ndarray _apply_sparse_csr(self, object X):
