@@ -181,8 +181,8 @@ def compute_gamma(np.ndarray preg, np.ndarray y):
     print('y (%d)'%(y.shape[0]), y)
     print('gmma (%d)'%(gmma.shape[0]), gmma)
 
-    print(preg.sum(1))
-    print(preg.sum(0))
+    #print(preg.sum(1))
+    #print(preg.sum(0))
     return gmma
 
 
