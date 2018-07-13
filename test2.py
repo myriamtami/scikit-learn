@@ -24,20 +24,21 @@ if __name__ == '__main__':
     #max_depth = 100
 
     # Fit
-    regr_3 = ensemble.RandomForestRegressor(criterion='mseprob',
-                                            max_depth=max_depth,
-                                            tol=sigmas, bootstrap=False)
     regr_1 = tree.DecisionTreeRegressor(criterion='mse',
                                         max_depth=max_depth,
                                         tol=sigmas)
     regr_2 = tree.DecisionTreeRegressor(criterion='mseprob',
                                         max_depth=max_depth,
                                         tol=sigmas)
+    regr_3 = ensemble.RandomForestRegressor(criterion='mseprob',
+                                            #max_depth=max_depth,
+                                            tol=sigmas, bootstrap=False,
+                                            n_jobs=1, n_estimators=5)
 
 
-    regr_3.fit(X, y)
     regr_1.fit(X, y)
     regr_2.fit(X, y)
+    regr_3.fit(X, y)
 
     # Predict
     X_test = np.arange(0.0, 5.0, 0.05)[:, np.newaxis]
