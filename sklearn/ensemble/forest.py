@@ -315,12 +315,17 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble)):
                                             random_state=random_state)
                 trees.append(tree)
 
+            if hasattr(self, 'criterion') and self.criterion == 'mseprob':
+                backend = "multiprocessing"
+            else:
+                backend = "threading"
+
             # Parallel loop: we use the threading backend as the Cython code
             # for fitting the trees is internally releasing the Python GIL
             # making threading always more efficient than multiprocessing in
             # that case.
             trees = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                             backend="threading")(
+                             backend=backend)(
                 delayed(_parallel_build_trees)(
                     t, self, X, y, sample_weight, i, len(trees),
                     verbose=self.verbose, class_weight=self.class_weight)
@@ -688,10 +693,13 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
         else:
             y_hat = np.zeros((X.shape[0]), dtype=np.float64)
 
+        get_predict = lambda x, critere:getattr(x, 'predict2') if critere == 'mseprob' else getattr(x, 'predict')
+
         # Parallel loop
         lock = threading.Lock()
         Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
-            delayed(accumulate_prediction)(e.predict, X, [y_hat], lock)
+            delayed(accumulate_prediction)(get_predict(e, self.criterion), X, [y_hat], lock)
+            #delayed(accumulate_prediction)(e.predict, X, [y_hat], lock)
             for e in self.estimators_)
 
         y_hat /= len(self.estimators_)
@@ -1226,6 +1234,7 @@ class RandomForestRegressor(ForestRegressor):
                  n_jobs=1,
                  random_state=None,
                  verbose=0,
+                 tol=None,
                  warm_start=False):
         super(RandomForestRegressor, self).__init__(
             base_estimator=DecisionTreeRegressor(),
@@ -1233,7 +1242,7 @@ class RandomForestRegressor(ForestRegressor):
             estimator_params=("criterion", "max_depth", "min_samples_split",
                               "min_samples_leaf", "min_weight_fraction_leaf",
                               "max_features", "max_leaf_nodes",
-                              "min_impurity_decrease", "min_impurity_split",
+                              "min_impurity_decrease", "min_impurity_split","tol",
                               "random_state"),
             bootstrap=bootstrap,
             oob_score=oob_score,
@@ -1251,6 +1260,7 @@ class RandomForestRegressor(ForestRegressor):
         self.max_leaf_nodes = max_leaf_nodes
         self.min_impurity_decrease = min_impurity_decrease
         self.min_impurity_split = min_impurity_split
+        self.tol = tol
 
 
 class ExtraTreesClassifier(ForestClassifier):

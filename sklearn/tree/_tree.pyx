@@ -576,7 +576,6 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                            n_node_samples < 2 * min_samples_leaf or
                            weighted_n_node_samples < 2 * min_weight_leaf)
 
-                printf('aaaaaaaaaaaa %d\n', is_leaf)
 
                 if first:
                     impurity = splitter.node_impurity()
@@ -584,9 +583,8 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
                 is_leaf = (is_leaf or
                            (impurity <= min_impurity_split))
-                printf('bbbbbbbbbbbb %d\n', is_leaf)
 
-                printf('nid: %d, impurity: %f, min_impurity_split: %f\n', parent, impurity, min_impurity_split)
+                #printf('nid: %d, impurity: %f, min_impurity_split: %f\n', parent, impurity, min_impurity_split)
 
 
                 if not is_leaf:
@@ -597,9 +595,8 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                     is_leaf = (is_leaf or split.pos >= end or
                                (split.improvement + EPSILON <
                                 min_impurity_decrease))
-                    printf('cccccccccccc %d\n', is_leaf)
 
-                    printf('pos: %d, end: %d,  improv: %f, min_impurity_decrease\n', split.pos, end, split.improvement + EPSILON, min_impurity_decrease)
+                    #printf('pos: %d, end: %d,  improv: %f, min_impurity_decrease\n', split.pos, end, split.improvement + EPSILON, min_impurity_decrease)
 
                 node_id = tree._add_node(parent, is_left, is_leaf, split.feature,
                                          split.threshold, impurity, n_node_samples,

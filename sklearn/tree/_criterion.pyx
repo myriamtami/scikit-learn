@@ -1560,8 +1560,8 @@ cdef class MSEPROB(RegressionCriterion):
                                  start, end)
 
 
-        printf("n_samples: %d\n", self.n_samples)
-        printf("n_outputs: %d\n",  self.n_outputs)
+        # Warning: n_output>1 not supported
+        printf('init criterion. n_samples: %d, n_outputs: %d\n', self.n_samples, self.n_outputs)
 
 
         return 0

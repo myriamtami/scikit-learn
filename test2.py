@@ -2,7 +2,7 @@
 
 import numpy as np
 import sklearn
-from sklearn import tree
+from sklearn import tree, ensemble
 import matplotlib.pyplot as plt
 
 print(sklearn.__path__)
@@ -24,14 +24,18 @@ if __name__ == '__main__':
     #max_depth = 100
 
     # Fit
+    regr_3 = ensemble.RandomForestRegressor(criterion='mseprob',
+                                            max_depth=max_depth,
+                                            tol=sigmas, bootstrap=False)
     regr_1 = tree.DecisionTreeRegressor(criterion='mse',
                                         max_depth=max_depth,
                                         tol=sigmas)
-
     regr_2 = tree.DecisionTreeRegressor(criterion='mseprob',
                                         max_depth=max_depth,
                                         tol=sigmas)
 
+
+    regr_3.fit(X, y)
     regr_1.fit(X, y)
     regr_2.fit(X, y)
 
@@ -48,6 +52,9 @@ if __name__ == '__main__':
     # Dynamic gaussian regions
     y_3 = regr_2.predict2(X_test)
 
+    # Forest
+    y_4 = regr_3.predict(X_test) # use predict2 in intern
+
     # plot
     plt.figure()
     plt.scatter(X, y, s=20, edgecolor="black",
@@ -56,6 +63,7 @@ if __name__ == '__main__':
              label="mse", linewidth=2)
     plt.plot(X_test, y_2, color="yellowgreen", label="probtree(baseline)", linewidth=2)
     plt.plot(X_test, y_3, color="yellow", label="probtree(dynamic)", linewidth=2, linestyle='--')
+    plt.plot(X_test, y_4, color="blue", label="probtree(dynamic+forest)", linewidth=2, linestyle='--')
 
     plt.xlabel("data")
     plt.ylabel("target")
