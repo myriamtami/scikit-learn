@@ -74,6 +74,7 @@ cdef struct StackRecord:
     bint is_left
     double impurity
     SIZE_t n_constant_features
+    SIZE_t curr_region
 
 cdef class Stack:
     cdef SIZE_t capacity
@@ -86,6 +87,16 @@ cdef class Stack:
                   SIZE_t n_constant_features) nogil except -1
     cdef int pop(self, StackRecord* res) nogil
 
+cdef class Queue:
+    cdef SIZE_t capacity
+    cdef SIZE_t top
+    cdef StackRecord* stack_
+
+    cdef bint is_empty(self) nogil
+    cdef int push(self, SIZE_t start, SIZE_t end, SIZE_t depth, SIZE_t parent,
+                  bint is_left, double impurity,
+                  SIZE_t n_constant_features, SIZE_t region) nogil except -1
+    cdef int pop(self, StackRecord* res) nogil
 
 # =============================================================================
 # PriorityHeap data structure

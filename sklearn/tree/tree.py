@@ -40,6 +40,7 @@ from ..utils.validation import check_is_fitted
 from ._criterion import Criterion
 from ._splitter import Splitter
 from ._tree import DepthFirstTreeBuilder
+from ._tree import BreadthFirstTreeBuilder
 from ._tree import BestFirstTreeBuilder
 from ._tree import Tree
 from . import _tree, _splitter, _criterion
@@ -59,11 +60,11 @@ DOUBLE = _tree.DOUBLE
 
 CRITERIA_CLF = {"gini": _criterion.Gini, "entropy": _criterion.Entropy}
 CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE,
-                "mae": _criterion.MAE, "mse2": _criterion.MSE2}
+                "mae": _criterion.MAE, "mseprob": _criterion.MSEPROB}
 
 DENSE_SPLITTERS = {"best": _splitter.BestSplitter,
                    "random": _splitter.RandomSplitter,
-                   "best2": _splitter.BestSplitter2
+                   "bestprob": _splitter.BestSplitterProb
                   }
 
 SPARSE_SPLITTERS = {"best": _splitter.BestSparseSplitter,
@@ -348,6 +349,11 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         splitter = self.splitter
         if not isinstance(self.splitter, Splitter):
+            if self.criterion == 'mseprob':
+                if self.splitter != 'bestprob':
+                    print('Setting splitter to best split "best2" for probababilistic tree.')
+                    self.splitter = 'bestprob'
+
             splitter = SPLITTERS[self.splitter](criterion,
                                                 self.max_features_,
                                                 min_samples_leaf,
@@ -369,7 +375,14 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
 
 
         # Use BestFirst if max_leaf_nodes given; use DepthFirst otherwise
-        if max_leaf_nodes < 0:
+        if self.criterion == 'mseprob':
+            builder = BreadthFirstTreeBuilder(splitter, min_samples_split,
+                                            min_samples_leaf,
+                                            min_weight_leaf,
+                                            max_depth,
+                                            self.min_impurity_decrease,
+                                            min_impurity_split)
+        elif max_leaf_nodes < 0:
             builder = DepthFirstTreeBuilder(splitter, min_samples_split,
                                             min_samples_leaf,
                                             min_weight_leaf,
@@ -386,6 +399,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                                            min_impurity_split)
 
         builder.build(self.tree_, X, y, sample_weight, X_idx_sorted)
+
 
         if self.n_outputs_ == 1:
             self.n_classes_ = self.n_classes_[0]
@@ -468,7 +482,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         # Regression
         else:
 
-            if self.criterion in ('mse2'):
+            if self.criterion in ('mseprob'):
                 if self.n_outputs_ == 1:
                     return proba[:, 0]
 
@@ -1171,6 +1185,7 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
             sample_weight=sample_weight,
             check_input=check_input,
             X_idx_sorted=X_idx_sorted)
+
         return self
 
 

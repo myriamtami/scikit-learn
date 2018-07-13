@@ -36,8 +36,22 @@ from ._utils cimport WeightedMedianCalculator
 #
 # _arr_lib import
 #
-from ._arr_lib cimport *
+#from ._arr_lib cimport *
 
+import scipy.stats as stats
+from cpython cimport Py_INCREF, PyObject
+cdef double INFINITY = np.inf
+
+def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
+
+    g = stats.norm(x, sigma)
+
+    if left_f == -INFINITY:
+        return g.cdf(right_f)
+    elif right_f == INFINITY:
+        return 1 - g.cdf(left_f)
+    else:
+        return g.cdf(right_f) - g.cdf(left_f)
 
 
 cdef class Criterion:
@@ -216,6 +230,94 @@ cdef class Criterion:
                              self.weighted_n_node_samples * impurity_right)
                           - (self.weighted_n_left / 
                              self.weighted_n_node_samples * impurity_left)))
+
+
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+        pass
+
+
+    cdef int update2(self, SIZE_t new_pos, SIZE_t feature, DOUBLE_t threshold) nogil except -1:
+        pass
+
+    cdef int _set_region(self, SIZE_t region, Coord* path) nogil except -1:
+        pass
+
+    cdef int reset2(self) nogil except -1:
+        pass
+
+    cdef inline feat_bound(self, Coord* path, SIZE_t feature):
+        ''' Return the uni-dimensional region length for the given feature. '''
+
+        cdef bint is_left = path[0].is_left
+        cdef DOUBLE_t thr_a = path[0].threshold
+        cdef DOUBLE_t thr_b
+
+        if is_left:
+            thr_b = -INFINITY
+        else:
+            thr_b = INFINITY
+
+        cdef int i = 1
+        cdef int j = 0
+
+        while True:
+
+            while path[j].feature != feature:
+                j += 1
+                i += 1
+                is_left = path[j].is_left
+                thr_a = path[j].threshold
+
+                if is_left:
+                    thr_b = -INFINITY
+                else:
+                    thr_b = INFINITY
+
+                if path[j].is_root:
+                    break
+
+            if path[j].feature != feature:
+                return -INFINITY, INFINITY
+
+            if path[i].feature == feature:
+                if is_left:
+                    if path[i].threshold < thr_a and path[i].threshold > thr_b:
+                        thr_b = path[i].threshold
+                else:
+                    if path[i].threshold > thr_a and path[i].threshold < thr_b:
+                        thr_b = path[i].threshold
+
+            if path[i].is_root:
+                break
+            else:
+                i += 1
+
+        if is_left:
+            #print(thr_b, thr_a)
+            return thr_b, thr_a
+        else:
+            #print(thr_a, thr_b)
+            return thr_a, thr_b
+
+
+    cdef np.ndarray _get_y_ndarray(self):
+        """Wraps value as a 1-d NumPy array.
+
+        The array keeps a reference to this Tree, which manages the underlying
+        memory.
+        """
+        cdef np.npy_intp shape[1]
+        shape[0] = <np.npy_intp> self.n_samples
+        cdef np.npy_intp strides[1]
+        strides[0] = sizeof(DOUBLE_t)
+        cdef np.ndarray arr
+        arr = np.PyArray_SimpleNewFromData(1, shape, np.NPY_DOUBLE, self.y)
+        #arr = PyArray_NewFromDescr(np.ndarray, np.float64, 1, shape,
+        #                           strides, <void*> self.y,
+        #                           np.NPY_DEFAULT, None)
+        Py_INCREF(self)
+        arr.base = <PyObject*> self
+        return arr
 
 
 cdef class ClassificationCriterion(Criterion):
@@ -826,6 +928,7 @@ cdef class RegressionCriterion(Criterion):
         self.pos = self.end
         return 0
 
+
     cdef int update(self, SIZE_t new_pos) nogil except -1:
         """Updated statistics by moving samples[pos:new_pos] to the left."""
 
@@ -1368,131 +1471,250 @@ cdef class FriedmanMSE(MSE):
         return (diff * diff / (self.weighted_n_left * self.weighted_n_right *
                                self.weighted_n_node_samples))
 
-#MSE2 is a copy-paste of the class MSE
-#The goal is to modify this class to do our approach: a criterion adapted to data with uncertainty
-cdef class MSE2(RegressionCriterion):
-    """ LAST: Mean absolute error impurity criterion
-       
-       NEW: New criterion for data with uncertainty
 
-        MSE2 = (1 / n)*(\sum_i (y_i - f_i)**2), where y_i is the true
+
+
+
+
+
+#
+# 
+# Warning : Weighted input not managed here....
+#
+cdef class MSEPROB(RegressionCriterion):
+    """ Only works with bestSplitter2.
+       
+        NEW: New criterion for data with uncertainty
+
+        MSE2 = (1 / n)*(\sum_i (y_i - F_i)**2), where y_i is the true
         value and f_i is the predicted value:
-        f_i = P_i(P'P)**{-1}P' * y
+        F_i = P_i(P'P)**{-1}P' * y
         such as P is a matrix with each probability to be in each region
     """
 
-    #new: Variable and type definition associated to the matrix P_reg of probabilities to be in each regions with dim n_samples rows n_outputs columns
-    cdef np.ndarray P_reg
-    cdef np.ndarray P_reg_T
 
-    cdef double node_impurity(self) nogil:
-        """Evaluate the impurity of the current node, i.e. the impurity of
-           samples[start:end]."""
+    def __cinit__(self, SIZE_t n_outputs, SIZE_t n_samples):
+        """Initialize parameters for this criterion.
 
-        cdef double* sum_total = self.sum_total
-        cdef double impurity
-        cdef SIZE_t k
+        Parameters
+        ----------
+        n_outputs : SIZE_t
+            The number of targets to be predicted
 
-        ##############################
-        #new : Construction of a matrix P_reg
-        #cdef np.ndarray[floating, ndim=2] P_reg2 = np.ones((self.n_samples,self.n_outputs), dtype=floating)
-        #cdef np.ndarray[:, :] P_reg = self.P_reg
-        #cdef int a = P_reg.shape[0]
-        #cdef int b = P_reg.shape[1]
-        #printf('%d %d', a, b)
+        n_samples : SIZE_t
+            The total number of samples to fit on
+        """
+
+        # Default values
+        self.y = NULL
+        self.y_stride = 0
+        self.sample_weight = NULL
+
+        self.samples = NULL
+        self.start = 0
+        self.pos = 0
+        self.end = 0
+
+        self.n_outputs = n_outputs
+        self.n_samples = n_samples
+        self.n_node_samples = 0
+        self.weighted_n_node_samples = 0.0
+        self.weighted_n_left = 0.0
+        self.weighted_n_right = 0.0
+
+        self.sq_sum_total = 0.0
+
+        # Allocate accumulators. Make sure they are NULL, not uninitialized,
+        # before an exception can be raised (which triggers __dealloc__).
+        self.sum_total = NULL
+        self.sum_left = NULL
+        self.sum_right = NULL
+
+        # Allocate memory for the accumulators
+        self.sum_total = <double*> calloc(n_outputs, sizeof(double))
+        self.sum_left = <double*> calloc(n_outputs, sizeof(double))
+        self.sum_right = <double*> calloc(n_outputs, sizeof(double))
+
+        if (self.sum_total == NULL or 
+                self.sum_left == NULL or
+                self.sum_right == NULL):
+            raise MemoryError()
+
+
+        self.fn = 0
+        self.region = 0
+        self.sigmas = NULL
+
+        self.preg = np.zeros((self.n_samples,1), dtype=np.float64)
+        self.gmma = np.zeros(1, dtype=np.float64)
+
+        self.gmma_back = np.zeros(self.gmma.shape[0], dtype=np.float64)
+        self.preg_back_r = np.zeros(self.n_samples, dtype=np.float64)
+
+
+    cdef int init(self, DOUBLE_t* y, SIZE_t y_stride, DOUBLE_t* sample_weight,
+                  double weighted_n_samples, SIZE_t* samples, SIZE_t start,
+                  SIZE_t end) nogil except -1:
+
+        RegressionCriterion.init(self, y, y_stride, sample_weight, weighted_n_samples, samples,
+                                 start, end)
 
 
         printf("n_samples: %d\n", self.n_samples)
         printf("n_outputs: %d\n",  self.n_outputs)
 
-  
 
-        impurity = self.sq_sum_total / self.weighted_n_node_samples
-        for k in range(self.n_outputs):
-            impurity -= (sum_total[k] / self.weighted_n_node_samples)**2.0
+        return 0
 
-        return impurity / self.n_outputs
+    cdef int reset(self) nogil except -1:
+        RegressionCriterion.reset(self)
 
-    cdef double proxy_impurity_improvement(self) nogil:
-        """Compute a proxy of the impurity reduction
+        self.fn = 1e6
 
-        This method is used to speed up the search for the best split.
-        It is a proxy quantity such that the split that maximizes this value
-        also maximizes the impurity improvement. It neglects all constant terms
-        of the impurity decrease for a given split.
+    cdef int reset2(self) nogil except -1:
+        cdef int n_regions = self.gmma.shape[0]
 
-        The absolute impurity improvement is only computed by the
-        impurity_improvement method once the best split has been found.
-        """
+        with gil:
+            self.gmma = self.gmma_back.copy()
+            self.preg[:, self.region] = self.preg_back_r
+            self.preg = np.delete(self.preg, n_regions-1, axis=1)
 
-        cdef double* sum_left = self.sum_left
-        cdef double* sum_right = self.sum_right
+    # Called juste after init()
+    cdef int _set_region(self, SIZE_t region, Coord* path) nogil except -1:
 
-        cdef SIZE_t k
-        cdef double proxy_impurity_left = 0.0
-        cdef double proxy_impurity_right = 0.0
+        self.region = region
 
-        for k in range(self.n_outputs):
-            proxy_impurity_left += sum_left[k] * sum_left[k]
-            proxy_impurity_right += sum_right[k] * sum_right[k]
+        cdef int f
 
-        return (proxy_impurity_left / self.weighted_n_left +
-                proxy_impurity_right / self.weighted_n_right)
+        with gil:
+            self.gmma_back = np.zeros(self.gmma.shape[0], dtype=np.float64)
+            self.preg_back_r = np.zeros(self.n_samples, dtype=np.float64)
+
+            self.gmma_back[:] = self.gmma
+            self.preg_back_r[:] = self.preg[:, region]
+
+            self.region_bounds = np.zeros((self.n_features, 2), dtype=np.float64)
+
+            for f in range(self.n_features):
+                left_f, right_f = self.feat_bound(path, f)
+                self.region_bounds[f, 0] = left_f
+                self.region_bounds[f, 1] = right_f
+
+
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+
+        # Initialize X
+        cdef np.ndarray X_ndarray = X
+        #cdef SIZE_t n_samples = X.shape[0] # already in.
+
+        self.X = <DTYPE_t*> X_ndarray.data
+        self.X_sample_stride = <SIZE_t> X.strides[0] / <SIZE_t> X.itemsize
+        self.X_feature_stride = <SIZE_t> X.strides[1] / <SIZE_t> X.itemsize
+        self.n_features = X.shape[1]
+
+
+        self.sigmas = sigmas
+
+
+    cdef int update2(self, SIZE_t new_pos, SIZE_t feature, DOUBLE_t threshold) nogil except -1:
+        """Updated statistics by moving samples[pos:new_pos] to the left."""
+
+        cdef SIZE_t n_regions
+        cdef double[:] left_region 
+        cdef double[:] right_region
+        cdef double[:] y
+
+        cdef int f, i
+        cdef double _pb_r, _pb_l, pb_r, pb_l, sigma, left_f, right_f
+
+        self.fn=0
+
+        with gil:
+
+            n_regions = self.gmma.shape[1]
+            left_region = np.ones(self.n_samples, dtype=np.float64)
+            right_region = np.ones(self.n_samples, dtype=np.float64)
+            #y = <DOUBLE_t[self.n_samples]> self.y # @debug multiple output
+            y = self._get_y_ndarray()[:self.n_samples]
+
+            for i in range(self.n_samples):
+                pb_l = 1
+                pb_r = 1
+                for f in range(self.n_features):
+
+                    sigma = self.sigmas[f]
+                    left_f, right_f = self.region_bounds[f]
+                    if f == feature:
+                        _pb_l = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          left_f, threshold, sigma)
+                        _pb_r = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          threshold, right_f, sigma)
+
+                        pb_l = pb_l * _pb_l
+                        pb_r = pb_r * _pb_r
+                    else:
+                        _pb_l = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          left_f, right_f, sigma)
+                    
+                        pb_l = pb_l * _pb_l
+                        pb_r = pb_r * _pb_l
+
+                # compute P_left
+                left_region[i] = pb_l
+                # compute P_right
+                right_region[i] = pb_r
+
+
+            # update preg
+            self.preg[:, self.region] = left_region
+            self.preg = np.insert(self.preg, n_regions, right_region, axis=1)
+
+            # memoryview don't support dot product
+            preg = np.asarray(self.preg)
+            gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+            self.gmma = gmma
+
+            
+            for i in range(self.n_samples):
+                self.fn += ( self.y[i] - preg[i].dot(gmma) )**2
+        
+
+            #printf('fn: %f\n', self.fn/self.n_samples)
+            self.fn = self.fn / self.n_samples
+          
+
+    cdef double node_impurity(self) nogil:
+        """Evaluate the impurity of the current node, i.e. the impurity of
+           samples[start:end]."""
+
+        cdef int i
+        cdef double impurity = 0
+
+        for i in range(self.n_samples):
+            impurity += self.y[i]**2
+
+        return 1e6
+        #return impurity / self.n_samples
+
 
     cdef void children_impurity(self, double* impurity_left,
                                 double* impurity_right) nogil:
-        """Evaluate the impurity in children nodes, i.e. the impurity of the
-           left child (samples[start:pos]) and the impurity the right child
-           (samples[pos:end])."""
+
+        impurity_left[0] = self.fn
+        impurity_right[0] = self.fn
 
 
-        cdef DOUBLE_t* y = self.y
-        cdef DOUBLE_t* sample_weight = self.sample_weight
-        cdef SIZE_t* samples = self.samples
-        cdef SIZE_t pos = self.pos
-        cdef SIZE_t start = self.start
 
-        cdef double* sum_left = self.sum_left
-        cdef double* sum_right = self.sum_right
+    #cdef void node_value(self, double* dest) nogil:
+    #    """Compute the node value of samples[start:end] into dest."""
 
-        cdef double sq_sum_left = 0.0
-        cdef double sq_sum_right
+    #    pass
 
-        cdef SIZE_t i
-        cdef SIZE_t p
-        cdef SIZE_t k
-        cdef DOUBLE_t w = 1.0
-        cdef DOUBLE_t y_ik
+    cdef double impurity_improvement(self, double impurity) nogil:
 
-        for p in range(start, pos):
-            i = samples[p]
-
-            if sample_weight != NULL:
-                w = sample_weight[i]
-
-            for k in range(self.n_outputs):
-                y_ik = y[i * self.y_stride + k]
-                sq_sum_left += w * y_ik * y_ik
-
-        sq_sum_right = self.sq_sum_total - sq_sum_left
-
-        impurity_left[0] = sq_sum_left / self.weighted_n_left
-        impurity_right[0] = sq_sum_right / self.weighted_n_right
-
-        for k in range(self.n_outputs):
-            impurity_left[0] -= (sum_left[k] / self.weighted_n_left) ** 2.0
-            impurity_right[0] -= (sum_right[k] / self.weighted_n_right) ** 2.0
-
-        impurity_left[0] /= self.n_outputs
-        impurity_right[0] /= self.n_outputs
-
-
-    cdef void node_value(self, double* dest) nogil:
-        """Compute the node value of samples[start:end] into dest."""
-
-        cdef SIZE_t k
-
-        for k in range(self.n_outputs):
-            dest[k] = self.sum_total[k] / self.weighted_n_node_samples
+        if impurity > self.fn:
+            return impurity - self.fn
+        else:
+            return self.fn - impurity
 
 

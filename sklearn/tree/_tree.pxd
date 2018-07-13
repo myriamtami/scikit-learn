@@ -35,7 +35,7 @@ cdef struct Node:
     DOUBLE_t weighted_n_node_samples     # Weighted number of samples at the node
 
     bint is_left
-    SIZE_t depth
+    SIZE_t depth # It's not used..could be dropped
     Coord* path
 
 cdef struct Coord:
@@ -69,7 +69,7 @@ cdef class Tree:
     cdef SIZE_t n_samples       # X.shape[0]
     cdef SIZE_t n_regions   # Number of leaf nodes
     cdef DOUBLE_t* preg     # array (n_samples, n_regions)
-    cdef DOUBLE_t* gmma     # array (n_samples, n_regions)
+    cdef DOUBLE_t* gmma     # array (n_regions)
 
     cdef DTYPE_t* X
     cdef SIZE_t X_sample_stride
@@ -103,9 +103,10 @@ cdef class Tree:
 
     cpdef compute_feature_importances(self, normalize=*)
 
-    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, bint is_left)  nogil except -1
+    cdef int _get_parent_path(self, Coord* path, SIZE_t parent, SIZE_t depth, bint is_left)  nogil except -1
     cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride, DOUBLE_t* y)
     cdef int _compute_preg(self, DOUBLE_t* preg, DTYPE_t* X, SIZE_t n_samples)
+    cpdef yaaa(self)
 
 
 # =============================================================================
@@ -133,3 +134,5 @@ cdef class TreeBuilder:
                 np.ndarray sample_weight=*,
                 np.ndarray X_idx_sorted=*)
     cdef _check_input(self, object X, np.ndarray y, np.ndarray sample_weight)
+
+

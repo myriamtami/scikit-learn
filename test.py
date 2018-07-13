@@ -12,18 +12,20 @@ X = [[0, 0], [2, 2], [4,4]]
 #X = [[0], [2], [4]]
 Y = [0.5, 2.5, 4.5]
 #Y = [[0.5,0.6], [2.5,2.3], [4.5, 2.2]]
-sigmas = 0.00000001
+sigmas = 0.000001
 
 print('data X', X)
 print('Out Y', Y)
 
 
-reg = tree.DecisionTreeRegressor(criterion='mse2',
-                                 splitter='best2',
+reg = tree.DecisionTreeRegressor(criterion='mseprob',
                                  tol=sigmas)
 reg = reg.fit(X, Y)
 
+print(reg)
+
 t = reg.tree_
+
 print('value', t.value)
 print('feature', t.feature)
 print('n_node_samples', t.n_node_samples)
@@ -35,7 +37,6 @@ print('y_test', t.y)
 
 print('Preg', t.preg)
 
-print(reg)
 
 new = [[0.4, 0.7],
        [2.1, 2.2],

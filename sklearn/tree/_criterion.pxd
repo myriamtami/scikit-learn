@@ -18,6 +18,12 @@ ctypedef np.npy_intp SIZE_t              # Type for indices and counters
 ctypedef np.npy_int32 INT32_t            # Signed 32 bit integer
 ctypedef np.npy_uint32 UINT32_t          # Unsigned 32 bit integer
 
+cdef struct Coord:
+    bint is_left
+    SIZE_t feature
+    DOUBLE_t threshold
+    bint is_root
+
 cdef class Criterion:
     # The criterion computes the impurity of a node and the reduction of
     # impurity of a split on that node. It also computes the output statistics
@@ -60,12 +66,22 @@ cdef class Criterion:
     cdef int reset(self) nogil except -1
     cdef int reverse_reset(self) nogil except -1
     cdef int update(self, SIZE_t new_pos) nogil except -1
+    cdef int update2(self, SIZE_t new_pos, SIZE_t feature, DOUBLE_t threshold) nogil except -1
     cdef double node_impurity(self) nogil
     cdef void children_impurity(self, double* impurity_left,
                                 double* impurity_right) nogil
     cdef void node_value(self, double* dest) nogil
     cdef double impurity_improvement(self, double impurity) nogil
     cdef double proxy_impurity_improvement(self) nogil
+
+    # MSEPROB...
+    # @Debug Cython: declaration of new methods ?!
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas)
+    cdef inline feat_bound(self, Coord* path, SIZE_t feature) # how to declare static ?
+    cdef int _set_region(self, SIZE_t region, Coord* path) nogil except -1
+    cdef int reset2(self) nogil except -1
+
+    cdef np.ndarray _get_y_ndarray(self)
 
 cdef class ClassificationCriterion(Criterion):
     """Abstract criterion for classification."""
@@ -77,3 +93,25 @@ cdef class RegressionCriterion(Criterion):
     """Abstract regression criterion."""
 
     cdef double sq_sum_total
+
+
+cdef class MSEPROB(RegressionCriterion):
+
+    # This criterion needs data access
+    cdef DTYPE_t* X
+    cdef SIZE_t X_sample_stride 
+    cdef SIZE_t X_feature_stride
+    cdef SIZE_t n_features
+
+    cdef DOUBLE_t* sigmas                # tolerance for X[:,k]
+
+    cdef double fn # local impurity
+
+    cdef SIZE_t region # pointer on the current region
+    cdef double[:,:] preg
+    cdef double[:] gmma
+    cdef double[:] preg_back_r # keep the initial column to modify
+    cdef double[:] gmma_back # keep the initial gamma vector 
+    cdef double[:,:] region_bounds # regions bound for each feature of the current node
+
+

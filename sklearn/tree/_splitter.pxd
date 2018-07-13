@@ -20,6 +20,13 @@ ctypedef np.npy_intp SIZE_t              # Type for indices and counters
 ctypedef np.npy_int32 INT32_t            # Signed 32 bit integer
 ctypedef np.npy_uint32 UINT32_t          # Unsigned 32 bit integer
 
+cdef struct Coord:
+    bint is_left
+    SIZE_t feature
+    DOUBLE_t threshold
+    bint is_root
+
+
 cdef struct SplitRecord:
     # Data to track sample split
     SIZE_t feature         # Which feature to split on.
@@ -90,7 +97,7 @@ cdef class Splitter:
                   np.ndarray X_idx_sorted=*) except -1
 
     cdef int node_reset(self, SIZE_t start, SIZE_t end,
-                        double* weighted_n_node_samples) nogil except -1
+                        double* weighted_n_node_samples, Coord* path, SIZE_t region) nogil except -1
 
     cdef int node_split(self,
                         double impurity,   # Impurity of the node
@@ -100,3 +107,5 @@ cdef class Splitter:
     cdef void node_value(self, double* dest) nogil
 
     cdef double node_impurity(self) nogil
+
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas)

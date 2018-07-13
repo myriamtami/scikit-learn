@@ -24,18 +24,29 @@ if __name__ == '__main__':
     #max_depth = 100
 
     # Fit
-    regr_1 = tree.DecisionTreeRegressor(criterion='mse2',
-                                        splitter='best2',
+    regr_1 = tree.DecisionTreeRegressor(criterion='mse',
                                         max_depth=max_depth,
                                         tol=sigmas)
+
+    regr_2 = tree.DecisionTreeRegressor(criterion='mseprob',
+                                        max_depth=max_depth,
+                                        tol=sigmas)
+
     regr_1.fit(X, y)
+    regr_2.fit(X, y)
 
     # Predict
     X_test = np.arange(0.0, 5.0, 0.05)[:, np.newaxis]
     #X_test = np.asarray((X_test[:,0],X_test[:,0]+1)).T
+
+    # Normal mse prediction
     y_1 = regr_1.predict(X_test)
 
+    # "Baseline" prediction wiht gaussian regions
     y_2 = regr_1.predict2(X_test)
+
+    # Dynamic gaussian regions
+    y_3 = regr_2.predict2(X_test)
 
     # plot
     plt.figure()
@@ -43,7 +54,9 @@ if __name__ == '__main__':
                 c="darkorange", label="data")
     plt.plot(X_test, y_1, color="cornflowerblue",
              label="mse", linewidth=2)
-    plt.plot(X_test, y_2, color="yellowgreen", label="probtree", linewidth=2)
+    plt.plot(X_test, y_2, color="yellowgreen", label="probtree(baseline)", linewidth=2)
+    plt.plot(X_test, y_3, color="yellow", label="probtree(dynamic)", linewidth=2, linestyle='--')
+
     plt.xlabel("data")
     plt.ylabel("target")
     plt.title("Decision Tree Regression")

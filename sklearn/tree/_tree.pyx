@@ -33,6 +33,7 @@ from scipy.sparse import csc_matrix
 from scipy.sparse import csr_matrix
 
 from ._utils cimport Stack
+from ._utils cimport Queue
 from ._utils cimport StackRecord
 from ._utils cimport PriorityHeap
 from ._utils cimport PriorityHeapRecord
@@ -92,9 +93,6 @@ NODE_DTYPE = np.dtype({
 })
 
 
-#
-# @Debuig/mse2
-#
 
 #from libcpp.vector cimport vector
 
@@ -117,9 +115,9 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
     cdef DOUBLE_t thr_b
 
     if is_left:
-        thr_b = -1000000
+        thr_b = -INFINITY
     else:
-        thr_b = 1000000
+        thr_b = INFINITY
 
     cdef int i = 1
     cdef int j = 0
@@ -133,15 +131,15 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
             thr_a = path[j].threshold
 
             if is_left:
-                thr_b = -1000000
+                thr_b = -INFINITY
             else:
-                thr_b = 1000000
+                thr_b = INFINITY
 
             if path[j].is_root:
                 break
 
         if path[j].feature != feature:
-            return -1000000, 1000000
+            return -INFINITY, INFINITY
 
         if path[i].feature == feature:
             if is_left:
@@ -167,12 +165,13 @@ def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
 
     g = stats.norm(x, sigma)
 
-    if left_f <= -1000000:
+    if left_f == -INFINITY:
         return g.cdf(right_f)
-    elif right_f >= 1000000:
+    elif right_f == INFINITY:
         return 1 - g.cdf(left_f)
     else:
         return g.cdf(right_f) - g.cdf(left_f)
+
 
 def compute_gamma(np.ndarray preg, np.ndarray y):
     gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
@@ -304,6 +303,8 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         cdef Stack stack = Stack(INITIAL_STACK_SIZE)
         cdef StackRecord stack_record
 
+        cdef Coord* curr_path = NULL
+
 
         # @Debug
         cdef SIZE_t n_samples = splitter.n_samples
@@ -347,7 +348,10 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                 n_constant_features = stack_record.n_constant_features
 
                 n_node_samples = end - start
-                splitter.node_reset(start, end, &weighted_n_node_samples)
+                curr_path = <Coord *> malloc(depth * sizeof(Coord))
+                tree._get_parent_path(curr_path, parent, depth, is_left)
+
+                splitter.node_reset(start, end, &weighted_n_node_samples, curr_path, 0)
 
                 is_leaf = (depth >= max_depth or
                            n_node_samples < min_samples_split or
@@ -360,6 +364,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
                 is_leaf = (is_leaf or
                            (impurity <= min_impurity_split))
+
 
                 if not is_leaf:
                     splitter.node_split(impurity, &split, &n_constant_features)
@@ -374,6 +379,8 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                                          split.threshold, impurity, n_node_samples,
                                          weighted_n_node_samples)
 
+                
+
                 if node_id == <SIZE_t>(-1):
                     rc = -1
                     break
@@ -385,6 +392,9 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
 
                 if not is_leaf:
+                    
+                    #free(curr_path)
+
                     # Push right child on stack
                     rc = stack.push(split.pos, end, depth + 1, node_id, 0,
                                     split.impurity_right, n_constant_features)
@@ -397,8 +407,9 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                     if rc == -1:
                         break
                 else:
-                    # Compute parent path 
-                    tree._add_parent_path(node_id, depth, is_left)
+                    # save parent path for current leaf
+                    tree.nodes[node_id].path = curr_path
+                    tree.nodes[node_id].depth = depth
 
 
                 if depth > max_depth_seen:
@@ -425,9 +436,235 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
         gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
                              tree._get_y_ndarray()[:tree.n_samples])
 
+        safe_realloc(&tree.gmma, tree.n_regions)
+        #tree.gmma = <DOUBLE_t*>gmma.data
+        memcpy(tree.gmma, gmma.data, sizeof(DOUBLE_t)*tree.n_regions)
+
+
+        if rc == -1:
+            raise MemoryError()
+
+# breadth first builder ---------------------------------------------------------
+
+cdef class BreadthFirstTreeBuilder(TreeBuilder):
+    """Build a decision tree in depth-first fashion."""
+
+    def __cinit__(self, Splitter splitter, SIZE_t min_samples_split,
+                  SIZE_t min_samples_leaf, double min_weight_leaf,
+                  SIZE_t max_depth, double min_impurity_decrease,
+                  double min_impurity_split):
+        self.splitter = splitter
+        self.min_samples_split = min_samples_split
+        self.min_samples_leaf = min_samples_leaf
+        self.min_weight_leaf = min_weight_leaf
+        self.max_depth = max_depth
+        self.min_impurity_decrease = min_impurity_decrease
+        self.min_impurity_split = min_impurity_split
+
+    cpdef build(self, Tree tree, object X, np.ndarray y,
+                np.ndarray sample_weight=None,
+                np.ndarray X_idx_sorted=None):
+        """Build a decision tree from the training set (X, y)."""
+
+        # check input
+        X, y, sample_weight = self._check_input(X, y, sample_weight)
+
+        cdef DOUBLE_t* sample_weight_ptr = NULL
+        if sample_weight is not None:
+            sample_weight_ptr = <DOUBLE_t*> sample_weight.data
+
+        # Initial capacity
+        cdef int init_capacity
+
+        if tree.max_depth <= 10:
+            init_capacity = (2 ** (tree.max_depth + 1)) - 1
+        else:
+            init_capacity = 2047
+
+        tree._resize(init_capacity)
+
+        # Parameters
+        cdef Splitter splitter = self.splitter
+        cdef SIZE_t max_depth = self.max_depth
+        cdef SIZE_t min_samples_leaf = self.min_samples_leaf
+        cdef double min_weight_leaf = self.min_weight_leaf
+        cdef SIZE_t min_samples_split = self.min_samples_split
+        cdef double min_impurity_decrease = self.min_impurity_decrease
+        cdef double min_impurity_split = self.min_impurity_split
+
+        # Recursive partition (without actual recursion)
+        splitter.init(X, y, sample_weight_ptr, X_idx_sorted)
+
+        splitter.extra_init(X, tree.sigmas)
+        tree.extra_init(splitter.X_sample_stride, splitter.X_feature_stride, splitter.y)
+
+        cdef SIZE_t start
+        cdef SIZE_t end
+        cdef SIZE_t depth
+        cdef SIZE_t parent
+        cdef bint is_left
+        cdef SIZE_t n_node_samples = splitter.n_samples
+        cdef double weighted_n_samples = splitter.weighted_n_samples
+        cdef double weighted_n_node_samples
+        cdef SplitRecord split
+        cdef SIZE_t node_id
+
+        cdef double threshold
+        cdef double impurity = INFINITY
+        cdef SIZE_t n_constant_features
+        cdef bint is_leaf
+        cdef bint first = 1
+        cdef SIZE_t max_depth_seen = -1
+        cdef int rc = 0
+
+        #cdef Stack queue = Stack(INITIAL_STACK_SIZE)
+        cdef Queue queue = Queue(INITIAL_STACK_SIZE)
+        cdef StackRecord stack_record
+
+        cdef Coord* curr_path = NULL
+
+
+        # @Debug
+        cdef SIZE_t n_samples = splitter.n_samples
+        cdef SIZE_t n_outputs = tree.n_outputs
+        P_reg_np = np.zeros((n_samples, n_outputs), dtype=np.float64)
+        P_reg_T_np = P_reg_np.T
+        cdef double[:,:] P_reg = P_reg_np
+        cdef double[:,:] P_reg_T = P_reg_np.T
+        print('shape %d, %d' %  (P_reg_np.shape[0], P_reg_np.shape[1]))
+        print('shape T %d, %d' %  (P_reg_T_np.shape[0], P_reg_T_np.shape[1]))
+        cdef np.ndarray[double, ndim=1] R_temp
+
+        with nogil:
+
+            # @Debug
+            printf('shape %d %d\n', P_reg.shape[0], P_reg.shape[1])
+            printf('shape T %d %d \n', P_reg_T.shape[0], P_reg_T.shape[1])
+            #with gil: # need to acuire the gil for "python operation"
+            #    R_temp = np.empty(n_samples, dtype=np.double)
+            #    print(P_reg[0], P_reg[1], R_temp[1])
+            #    R_temp[1] = cydot(P_reg[0], P_reg[1],1)
+            #    print(R_temp[1])
+
+            # push root node onto stack
+            rc = queue.push(0, n_node_samples, 0, _TREE_UNDEFINED, 0, INFINITY, 0, 0)
+            if rc == -1:
+                # got return code -1 - out-of-memory
+                with gil:
+                    raise MemoryError()
+
+            while not queue.is_empty():
+                queue.pop(&stack_record)
+
+                start = stack_record.start
+                end = stack_record.end
+                depth = stack_record.depth
+                parent = stack_record.parent
+                is_left = stack_record.is_left
+                impurity = stack_record.impurity
+                n_constant_features = stack_record.n_constant_features
+                curr_region = stack_record.curr_region
+
+                n_node_samples = end - start
+                curr_path = <Coord *> malloc(depth * sizeof(Coord))
+                tree._get_parent_path(curr_path, parent, depth, is_left)
+
+                splitter.node_reset(start, end, &weighted_n_node_samples, curr_path, curr_region)
+
+                is_leaf = (depth >= max_depth or
+                           n_node_samples < min_samples_split or
+                           n_node_samples < 2 * min_samples_leaf or
+                           weighted_n_node_samples < 2 * min_weight_leaf)
+
+                printf('aaaaaaaaaaaa %d\n', is_leaf)
+
+                if first:
+                    impurity = splitter.node_impurity()
+                    first = 0
+
+                is_leaf = (is_leaf or
+                           (impurity <= min_impurity_split))
+                printf('bbbbbbbbbbbb %d\n', is_leaf)
+
+                printf('nid: %d, impurity: %f, min_impurity_split: %f\n', parent, impurity, min_impurity_split)
+
+
+                if not is_leaf:
+                    splitter.node_split(impurity, &split, &n_constant_features)
+                    # If EPSILON=0 in the below comparison, float precision
+                    # issues stop splitting, producing trees that are
+                    # dissimilar to v0.18
+                    is_leaf = (is_leaf or split.pos >= end or
+                               (split.improvement + EPSILON <
+                                min_impurity_decrease))
+                    printf('cccccccccccc %d\n', is_leaf)
+
+                    printf('pos: %d, end: %d,  improv: %f, min_impurity_decrease\n', split.pos, end, split.improvement + EPSILON, min_impurity_decrease)
+
+                node_id = tree._add_node(parent, is_left, is_leaf, split.feature,
+                                         split.threshold, impurity, n_node_samples,
+                                         weighted_n_node_samples)
+
+                
+
+                if node_id == <SIZE_t>(-1):
+                    rc = -1
+                    break
+
+
+                # Store value for all nodes, to facilitate tree/model
+                # inspection and interpretation
+                splitter.node_value(tree.value + node_id * tree.value_stride)
+
+
+                if not is_leaf:
+                    
+                    #free(curr_path)
+
+                    # Push left child on stack
+                    rc = queue.push(start, split.pos, depth + 1, node_id, 1,
+                                    split.impurity_left, n_constant_features, curr_region)
+                    if rc == -1:
+                        break
+
+                    # Push right child on stack
+                    rc = queue.push(split.pos, end, depth + 1, node_id, 0,
+                                    split.impurity_right, n_constant_features, tree.n_regions)
+
+                    if rc == -1:
+                        break
+                else:
+                    # save parent path for current leaf
+                    tree.nodes[node_id].path = curr_path
+                    tree.nodes[node_id].depth = depth
+
+
+                if depth > max_depth_seen:
+                    max_depth_seen = depth
+
+            if rc >= 0:
+                rc = tree._resize_c(tree.node_count)
+
+            if rc >= 0:
+                tree.max_depth = max_depth_seen
+
+            # end of while
+            
+        # end of nogil
+        
+        # For prediction create Pr matrix for X
+        safe_realloc(&tree.preg, n_samples * tree.n_regions)
+        tree._compute_preg(tree.preg, splitter.X, tree.n_samples)
+
+
+        # Compute sigma
+        cdef np.ndarray gmma
+        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
+                             tree._get_y_ndarray()[:tree.n_samples])
 
         safe_realloc(&tree.gmma, tree.n_regions)
-        tree.gmma = <DOUBLE_t*>gmma.data
+        #tree.gmma = <DOUBLE_t*>gmma.data
+        memcpy(tree.gmma, gmma.data, sizeof(DOUBLE_t)*tree.n_regions)
 
 
         if rc == -1:
@@ -600,7 +837,7 @@ cdef class BestFirstTreeBuilder(TreeBuilder):
         cdef SIZE_t n_left, n_right
         cdef double imp_diff
 
-        splitter.node_reset(start, end, &weighted_n_node_samples)
+        splitter.node_reset(start, end, &weighted_n_node_samples, NULL, 0)
 
         if is_first:
             impurity = splitter.node_impurity()
@@ -975,18 +1212,15 @@ cdef class Tree:
         return 0
 
 
-    cdef int _add_parent_path(self, SIZE_t node_id, SIZE_t depth, bint is_left)  nogil except -1:
+    cdef int _get_parent_path(self, Coord* path,  SIZE_t parent_id, SIZE_t depth, bint is_left)  nogil except -1:
         
-        cdef Node* node = &self.nodes[node_id]
-        cdef Node* parent = &self.nodes[node.parent]
+        cdef Node* parent = &self.nodes[parent_id]
 
         #safe_realloc(&node.path, depth)
-        node.path = <Coord *> malloc(depth * sizeof(Coord))
-        cdef Coord* path = node.path
+        #path = <Coord *> malloc(depth * sizeof(Coord))
+
         cdef Coord* coord
         cdef bint curr_is_left = is_left
-        
-        node.depth = depth
 
         cdef SIZE_t i
         for i in range(0, depth):
@@ -1005,9 +1239,10 @@ cdef class Tree:
 
             curr_is_left = parent.is_left
             parent = &self.nodes[parent.parent]
-        
 
         return 0
+
+        
 
     cdef SIZE_t _add_node(self, SIZE_t parent, bint is_left, bint is_leaf,
                           SIZE_t feature, double threshold, double impurity,
@@ -1085,6 +1320,8 @@ cdef class Tree:
         cdef SIZE_t X_fx_stride = <SIZE_t> X.strides[1] / <SIZE_t> X.itemsize
         cdef SIZE_t n_samples = X.shape[0]
 
+        cdef int i,k
+
         # Initialize output
         cdef np.ndarray[DOUBLE_t] predictions_arr = np.zeros((n_samples,), dtype=np.float64)
         cdef DOUBLE_t* predictions = <DOUBLE_t*> predictions_arr.data
@@ -1092,14 +1329,14 @@ cdef class Tree:
         cdef DOUBLE_t* preg_x = NULL
         safe_realloc(&preg_x, n_samples * self.n_regions)
 
+
         self._compute_preg(preg_x, X_ptr, n_samples)
 
-        cdef int i,k
         for i in range(n_samples):
 
             for k in range(self.n_regions):
 
-                #printf('final: x%d:%f,  gmma%d:%f pr:%f \n', i, 
+                #printf('final: x%d:%f,  gmma%d:%f, pr:%f \n', i, 
                 #       X_ptr[X_sample_stride*i], 
                 #       k,  self.gmma[k],  preg_x[i*self.X_sample_stride + k])
 
@@ -1437,6 +1674,15 @@ cdef class Tree:
                 importances /= normalizer
 
         return importances
+
+    cpdef yaaa(self):
+
+
+        cdef int o
+        printf('regions: %d\n', self.n_regions)
+        for o in range(self.n_regions):
+            printf('taaa %f\n', self.gmma[o])
+
 
     cdef np.ndarray _get_value_ndarray(self):
         """Wraps value as a 3-d NumPy array.

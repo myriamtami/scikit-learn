@@ -187,7 +187,7 @@ cdef class Splitter:
         return 0
 
     cdef int node_reset(self, SIZE_t start, SIZE_t end,
-                        double* weighted_n_node_samples) nogil except -1:
+                        double* weighted_n_node_samples, Coord* path, SIZE_t region) nogil except -1:
         """Reset splitter on node samples[start:end].
 
         Returns -1 in case of failure to allocate memory (and raise MemoryError)
@@ -201,6 +201,7 @@ cdef class Splitter:
             The index of the last sample to consider
         weighted_n_node_samples : numpy.ndarray, dtype=double pointer
             The total weight of those samples
+        path: use for probabilic tree to access the regions length of the current node.
         """
 
         self.start = start
@@ -238,6 +239,10 @@ cdef class Splitter:
         """Return the impurity of the current node."""
 
         return self.criterion.node_impurity()
+
+
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+        pass
 
 
 cdef class BaseDenseSplitter(Splitter):
@@ -1653,16 +1658,62 @@ cdef class RandomSparseSplitter(BaseSparseSplitter):
         n_constant_features[0] = n_total_constants
         return 0
 
-cdef class BestSplitter2(BaseDenseSplitter):
+cdef class BestSplitterProb(BaseDenseSplitter):
     """Splitter for finding the best split."""
     def __reduce__(self):
-        return (BestSplitter2, (self.criterion,
+        return (BestSplitterProb, (self.criterion,
                                self.max_features,
                                self.min_samples_leaf,
                                self.min_weight_leaf,
                                self.random_state,
                                self.presort), self.__getstate__())
 
+
+
+    cdef int init(self,
+                  object X,
+                  np.ndarray[DOUBLE_t, ndim=2, mode="c"] y,
+                  DOUBLE_t* sample_weight,
+                  np.ndarray X_idx_sorted=None) except -1:
+        """Initialize the splitter
+
+        Most of reference variable used to track sample[end:start] are ignored here since
+        the criterion compute on every point...
+
+        Returns -1 in case of failure to allocate memory (and raise MemoryError)
+        or 0 otherwise.
+        """
+
+        BaseDenseSplitter.init(self, X, y, sample_weight, X_idx_sorted)
+
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+        self.criterion.extra_init(X, sigmas)
+
+
+    cdef int node_reset(self, SIZE_t start, SIZE_t end,
+                        double* weighted_n_node_samples, 
+                        Coord* path, SIZE_t region) nogil except -1:
+        """Reset splitter on node samples[start:end].
+
+            :region! is the identifier of the current leaf.
+
+        """
+
+        self.start = start
+        self.end = end
+
+        self.criterion.init(self.y, self.y_stride,
+                            self.sample_weight, self.weighted_n_samples, self.samples,
+                            start, end)
+
+
+        # Region is not written in criterion.init methods because It feels like I have to rewrite all the init() method
+        # declaration for all the other critererion classe wich is bad.
+        self.criterion._set_region(region, path)
+
+
+        weighted_n_node_samples[0] = self.criterion.weighted_n_node_samples
+        return 0
 
 
 
@@ -1706,6 +1757,7 @@ cdef class BestSplitter2(BaseDenseSplitter):
         cdef SIZE_t feature_offset
         cdef SIZE_t i
         cdef SIZE_t j
+        cdef DTYPE_t  threshold
 
         cdef SIZE_t n_visited_features = 0
         # Number of features discovered to be constant during the split search
@@ -1825,19 +1877,24 @@ cdef class BestSplitter2(BaseDenseSplitter):
                                     ((end - current.pos) < min_samples_leaf)):
                                 continue
 
-                            self.criterion.update(current.pos)
+                            threshold = Xf[p - 1] / 2.0 + Xf[p] / 2.0
 
+                            # update preg and gmma
+                            self.criterion.update2(current.pos, current.feature, threshold)
+                            current_proxy_improvement = self.criterion.impurity_improvement(impurity)
+
+                            #self.criterion.update(current.pos)
                             # Reject if min_weight_leaf is not satisfied
-                            if ((self.criterion.weighted_n_left < min_weight_leaf) or
-                                    (self.criterion.weighted_n_right < min_weight_leaf)):
-                                continue
+                            #if ((self.criterion.weighted_n_left < min_weight_leaf) or
+                            #        (self.criterion.weighted_n_right < min_weight_leaf)):
+                            #    continue
+                            #current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
-                            current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
                             if current_proxy_improvement > best_proxy_improvement:
                                 best_proxy_improvement = current_proxy_improvement
                                 # sum of halves is used to avoid infinite value
-                                current.threshold = Xf[p - 1] / 2.0 + Xf[p] / 2.0
+                                current.threshold = threshold
 
                                 if ((current.threshold == Xf[p]) or
                                     (current.threshold == INFINITY) or
@@ -1845,6 +1902,10 @@ cdef class BestSplitter2(BaseDenseSplitter):
                                     current.threshold = Xf[p - 1]
 
                                 best = current  # copy
+
+                            # remove the nth+1 region.
+                            # memcopy the initial region values.
+                            self.criterion.reset2()
 
         # Reorganize into samples[start:best.pos] + samples[best.pos:end]
         if best.pos < end:
@@ -1864,7 +1925,8 @@ cdef class BestSplitter2(BaseDenseSplitter):
                     samples[p] = tmp
 
             self.criterion.reset()
-            self.criterion.update(best.pos)
+            self.criterion.update2(best.pos, best.feature, best.threshold)
+            #self.criterion.update(best.pos)
             best.improvement = self.criterion.impurity_improvement(impurity)
             self.criterion.children_impurity(&best.impurity_left,
                                              &best.impurity_right)
