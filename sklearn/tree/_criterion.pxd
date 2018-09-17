@@ -76,7 +76,7 @@ cdef class Criterion:
 
     # MSEPROB...
     # @Debug Cython: declaration of new methods ?!
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas)
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha)
     cdef inline feat_bound(self, Coord* path, SIZE_t feature) # how to declare static ?
     cdef int _set_region(self, SIZE_t region, Coord* path) nogil except -1
     cdef int reset2(self) nogil except -1
@@ -104,6 +104,7 @@ cdef class MSEPROB(RegressionCriterion):
     cdef SIZE_t n_features
 
     cdef DOUBLE_t* sigmas                # tolerance for X[:,k]
+    cdef DOUBLE_t _alpha                # Loss quantile parameter
 
     cdef double fn # local impurity
 
@@ -115,3 +116,5 @@ cdef class MSEPROB(RegressionCriterion):
     cdef double[:,:] region_bounds # regions bound for each feature of the current node
 
 
+cdef class MSEPROB_QUANT(MSEPROB):
+    pass

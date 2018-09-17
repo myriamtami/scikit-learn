@@ -42,6 +42,8 @@ import scipy.stats as stats
 from cpython cimport Py_INCREF, PyObject
 cdef double INFINITY = np.inf
 
+from statsmodels.regression.quantile_regression import QuantReg
+
 def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
 
     g = stats.norm(x, sigma)
@@ -232,7 +234,7 @@ cdef class Criterion:
                              self.weighted_n_node_samples * impurity_left)))
 
 
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha):
         pass
 
 
@@ -1563,6 +1565,7 @@ cdef class MSEPROB(RegressionCriterion):
         # Warning: n_output>1 not supported
         printf('init criterion. n_samples: %d, n_outputs: %d\n', self.n_samples, self.n_outputs)
 
+        self.reset()
 
         return 0
 
@@ -1601,7 +1604,7 @@ cdef class MSEPROB(RegressionCriterion):
                 self.region_bounds[f, 1] = right_f
 
 
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha):
 
         # Initialize X
         cdef np.ndarray X_ndarray = X
@@ -1614,6 +1617,7 @@ cdef class MSEPROB(RegressionCriterion):
 
 
         self.sigmas = sigmas
+        self._alpha = alpha
 
 
     cdef int update2(self, SIZE_t new_pos, SIZE_t feature, DOUBLE_t threshold) nogil except -1:
@@ -1674,12 +1678,9 @@ cdef class MSEPROB(RegressionCriterion):
             gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
             self.gmma = gmma
 
-            
             for i in range(self.n_samples):
                 self.fn += ( self.y[i] - preg[i].dot(gmma) )**2
         
-
-            #printf('fn: %f\n', self.fn/self.n_samples)
             self.fn = self.fn / self.n_samples
           
 
@@ -1712,9 +1713,100 @@ cdef class MSEPROB(RegressionCriterion):
 
     cdef double impurity_improvement(self, double impurity) nogil:
 
-        if impurity > self.fn:
-            return impurity - self.fn
-        else:
-            return self.fn - impurity
+        #if impurity > self.fn:
+        #    return impurity - self.fn
+        #else:
+        #    return self.fn - impurity
+        #return self.fn - impurity
+        return impurity - self.fn
 
+
+
+#
+# 
+# Warning : Weighted input not managed here....
+#
+cdef class MSEPROB_QUANT(MSEPROB):
+    """ Only works with bestSplitter2.
+       
+        NEW: New criterion for data with uncertainty
+
+        MSE2 = (1 / n)*(\sum_i (y_i - F_i)**2), where y_i is the true
+        value and f_i is the predicted value:
+        F_i = P_i(P'P)**{-1}P' * y
+        such as P is a matrix with each probability to be in each region
+    """
+
+
+
+
+    cdef int update2(self, SIZE_t new_pos, SIZE_t feature, DOUBLE_t threshold) nogil except -1:
+        """Updated statistics by moving samples[pos:new_pos] to the left."""
+
+        cdef SIZE_t n_regions
+        cdef double[:] left_region 
+        cdef double[:] right_region
+        cdef double[:] y
+
+        cdef int f, i
+        cdef double _pb_r, _pb_l, pb_r, pb_l, sigma, left_f, right_f
+
+        self.fn=0
+
+        with gil:
+
+            n_regions = self.gmma.shape[1]
+            left_region = np.ones(self.n_samples, dtype=np.float64)
+            right_region = np.ones(self.n_samples, dtype=np.float64)
+            #y = <DOUBLE_t[self.n_samples]> self.y # @debug multiple output
+            y = self._get_y_ndarray()[:self.n_samples]
+
+            for i in range(self.n_samples):
+                pb_l = 1
+                pb_r = 1
+                for f in range(self.n_features):
+
+                    sigma = self.sigmas[f]
+                    left_f, right_f = self.region_bounds[f]
+                    if f == feature:
+                        _pb_l = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          left_f, threshold, sigma)
+                        _pb_r = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          threshold, right_f, sigma)
+
+                        pb_l = pb_l * _pb_l
+                        pb_r = pb_r * _pb_r
+                    else:
+                        _pb_l = prob_region(self.X[self.X_sample_stride*i + f*self.X_feature_stride], 
+                                          left_f, right_f, sigma)
+                    
+                        pb_l = pb_l * _pb_l
+                        pb_r = pb_r * _pb_l
+
+                # compute P_left
+                left_region[i] = pb_l
+                # compute P_right
+                right_region[i] = pb_r
+
+
+            # update preg
+            self.preg[:, self.region] = left_region
+            self.preg = np.insert(self.preg, n_regions, right_region, axis=1)
+
+            # memoryview don't support dot product
+            preg = np.asarray(self.preg)
+            _y = np.asarray(y)
+            #gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+            gmma = QuantReg(_y, preg).fit(0.5).params
+            self.gmma = gmma
+
+            for i in range(self.n_samples):
+                vi = preg[i].dot(gmma)
+                if self.y[i]-vi > 0:
+                    self.fn += self._alpha*np.abs(self.y[i]-vi)
+                else:
+                    self.fn += (1-self._alpha)*np.abs(self.y[i]-vi)
+
+            self.fn = self.fn / self.n_samples
+          
 

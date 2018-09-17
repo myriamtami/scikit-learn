@@ -54,6 +54,7 @@ cdef class Tree:
     cdef public SIZE_t n_features        # Number of features in X
     cdef SIZE_t* n_classes               # Number of classes in y[:, k]
     cdef DOUBLE_t* sigmas                # tolerance for X[:,k]
+    cdef DOUBLE_t _alpha                # Loss quantile parameter
     cdef public SIZE_t n_outputs         # Number of outputs in y
     cdef public SIZE_t max_n_classes     # max(n_classes)
 

@@ -241,7 +241,7 @@ cdef class Splitter:
         return self.criterion.node_impurity()
 
 
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha):
         pass
 
 
@@ -1686,8 +1686,8 @@ cdef class BestSplitterProb(BaseDenseSplitter):
 
         BaseDenseSplitter.init(self, X, y, sample_weight, X_idx_sorted)
 
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas):
-        self.criterion.extra_init(X, sigmas)
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha):
+        self.criterion.extra_init(X, sigmas, alpha)
 
 
     cdef int node_reset(self, SIZE_t start, SIZE_t end,

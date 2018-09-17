@@ -33,3 +33,12 @@ Une fois la méthode fit complété, l'object `_tree` de type `Tree` définis da
 
 La construction et comparaison de mse de la baseline et la construction dynamique sont exposé dans le fichier `test2.py`.
 
+## Quantile
+
+* un changement à l'initialisation (nouveau paramètre alpha, appel à la librairie statsmodels et QuantReg pour une régression res_qr = QuantReg(y, P).fit(alpha) et enfin l'initialisation de gamma_chapeau par  res_qr.params)
+* ligne 29 où gamma_chapeau est  calculé par le même procédé mais avec P_test (res_qr = QuantReg(y, P_test).fit(alpha) puis res_qr.params)
+* ligne 30 la fonction de loss L() devient la fonction de loss quantile L_alpha. Ce qui se traduit par un procédé de ce type :
+si y_i-P[i,].gamma_chapeau >0  alors F_test[i] = alpha abs(y_i - P[i,].gamma_chapeau)
+sinon, F_test[i] =  (1-alpha) abs(y_i - P[i,].gamma_chapeau)
+et au final, F_test=1/n \sum_i=1^n F_test[i]
+* ligne 51 gamma_chapeau est actualisé selon le même procédé faisant appel à QuantReg de statsmodels avec la matrice P retenue.

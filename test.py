@@ -1,11 +1,11 @@
 #!/usr/bin/python3
 
 import sklearn
+print(sklearn.__path__)
 from sklearn import tree
 
 import numpy as np
 
-print(sklearn.__path__)
 
 # @Warning: don't work with sparse matrix, not implemented for now.
 X = [[0, 0], [2, 2], [4,4]]

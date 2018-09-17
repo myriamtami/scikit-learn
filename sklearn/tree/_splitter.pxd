@@ -108,4 +108,4 @@ cdef class Splitter:
 
     cdef double node_impurity(self) nogil
 
-    cdef int extra_init(self, object X, DOUBLE_t* sigmas)
+    cdef int extra_init(self, object X, DOUBLE_t* sigmas, DOUBLE_t alpha)

@@ -495,7 +495,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
         # Recursive partition (without actual recursion)
         splitter.init(X, y, sample_weight_ptr, X_idx_sorted)
 
-        splitter.extra_init(X, tree.sigmas)
+        splitter.extra_init(X, tree.sigmas, tree._alpha)
         tree.extra_init(splitter.X_sample_stride, splitter.X_feature_stride, splitter.y)
 
         cdef SIZE_t start
@@ -573,8 +573,11 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
                 is_leaf = (depth >= max_depth or
                            n_node_samples < min_samples_split or
-                           n_node_samples < 2 * min_samples_leaf or
-                           weighted_n_node_samples < 2 * min_weight_leaf)
+                           n_node_samples < 2 * min_samples_leaf)
+                #printf('is leaf 1: %d\n', is_leaf)
+                #printf('%d, %d, %d\n', depth >= max_depth, n_node_samples < min_samples_split, n_node_samples < 2 * min_samples_leaf)
+
+                ##or weighted_n_node_samples < 2 * min_weight_leaf) # Ignore weight here
 
 
                 if first:
@@ -583,6 +586,8 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
                 is_leaf = (is_leaf or
                            (impurity <= min_impurity_split))
+
+                printf('is leaf 2: %d\n', is_leaf)
 
                 #printf('nid: %d, impurity: %f, min_impurity_split: %f\n', parent, impurity, min_impurity_split)
 
@@ -596,7 +601,8 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                                (split.improvement + EPSILON <
                                 min_impurity_decrease))
 
-                    #printf('pos: %d, end: %d,  improv: %f, min_impurity_decrease\n', split.pos, end, split.improvement + EPSILON, min_impurity_decrease)
+                    #printf('is leaf 3: %d, %d,%d\n', is_leaf, split.pos, end)
+                    #printf('improvment %f, epsilon %f\n', split.improvement, EPSILON)
 
                 node_id = tree._add_node(parent, is_left, is_leaf, split.feature,
                                          split.threshold, impurity, n_node_samples,
@@ -997,7 +1003,7 @@ cdef class Tree:
             return self._get_value_ndarray()[:self.node_count]
 
     def __cinit__(self, int n_features, np.ndarray[SIZE_t, ndim=1] n_classes,
-                  int n_samples, int n_outputs, np.ndarray[DOUBLE_t, ndim=1] sigmas):
+                  int n_samples, int n_outputs, np.ndarray[DOUBLE_t, ndim=1] sigmas, double _alpha):
         """Constructor."""
         # Input/Output layout
         self.n_features = n_features
@@ -1037,6 +1043,7 @@ cdef class Tree:
         self.y = NULL
         self.preg = NULL
         self.gmma = NULL
+        self._alpha = _alpha
 
     cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride,
                        DOUBLE_t* y):
