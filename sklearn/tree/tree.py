@@ -377,7 +377,8 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
 
         # Use BestFirst if max_leaf_nodes given; use DepthFirst otherwise
         if self.criterion in  ('mseprob', 'mseprob_quantile'):
-            self.min_impurity_decrease = -10
+            self.min_impurity_decrease = self.min_impurity_decrease
+            #self.min_impurity_decrease = -10
             builder = BreadthFirstTreeBuilder(splitter, min_samples_split,
                                             min_samples_leaf,
                                             min_weight_leaf,

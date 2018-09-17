@@ -587,13 +587,13 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                 is_leaf = (is_leaf or
                            (impurity <= min_impurity_split))
 
-                printf('is leaf 2: %d\n', is_leaf)
-
+                #printf('is leaf 2: %d\n', is_leaf)
                 #printf('nid: %d, impurity: %f, min_impurity_split: %f\n', parent, impurity, min_impurity_split)
 
 
                 if not is_leaf:
-                    splitter.node_split(impurity, &split, &n_constant_features)
+                    #splitter.node_split(impurity, &split, &n_constant_features)
+                    splitter.node_split(1e6, &split, &n_constant_features)
                     # If EPSILON=0 in the below comparison, float precision
                     # issues stop splitting, producing trees that are
                     # dissimilar to v0.18
