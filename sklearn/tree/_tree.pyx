@@ -110,38 +110,45 @@ import numpy as np
 cdef inline feat_bound(Coord* path, SIZE_t feature):
     ''' Return the uni-dimensional region length for the given feature. '''
 
-    cdef bint is_left = path[0].is_left
-    cdef DOUBLE_t thr_a = path[0].threshold
+    if path[0].is_root:
+        return -INFINITY, INFINITY
+
+    cdef bint is_left
+    cdef DOUBLE_t thr_a
     cdef DOUBLE_t thr_b
 
-    if is_left:
-        thr_b = -INFINITY
-    else:
-        thr_b = INFINITY
-
-    cdef int i = 1
-    cdef int j = 0
+    cdef int i = 0
+    cdef bint first = True
 
     while True:
 
-        while path[j].feature != feature:
-            j += 1
+        while path[i].feature != feature:
             i += 1
-            is_left = path[j].is_left
-            thr_a = path[j].threshold
+
+            if path[i].is_end:
+                break
+
+        if path[i].feature != feature:
+            return -INFINITY, INFINITY
+        elif first:
+            first = False
+            is_left = path[i].is_left
+            thr_a = path[i].threshold
 
             if is_left:
                 thr_b = -INFINITY
             else:
                 thr_b = INFINITY
 
-            if path[j].is_root:
+            if path[i].is_end:
                 break
 
-        if path[j].feature != feature:
-            return -INFINITY, INFINITY
+            i += 1
+            continue
+
 
         if path[i].feature == feature:
+
             if is_left:
                 if path[i].threshold < thr_a and path[i].threshold > thr_b:
                     thr_b = path[i].threshold
@@ -149,16 +156,22 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
                 if path[i].threshold > thr_a and path[i].threshold < thr_b:
                     thr_b = path[i].threshold
 
-        if path[i].is_root:
+            # For debug; can be removed
+            if -EPSILON <= thr_b <= EPSILON or -EPSILON <= thr_a <= EPSILON:
+                printf('heeeeeeeeeereeeeeee\n')
+                print('laaaaa', i, is_left, path[i] )
+                printf('%d\n',  &path[0])
+
+        if path[i].is_end:
             break
         else:
             i += 1
 
     if is_left:
-        #print(thr_b, thr_a)
+        #printf("(%f, %f)\n", thr_b, thr_a)
         return thr_b, thr_a
     else:
-        #print(thr_a, thr_b)
+        #printf("(%f, %f)\n", thr_a, thr_b)
         return thr_a, thr_b
 
 def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
@@ -179,6 +192,8 @@ def compute_gamma(np.ndarray preg, np.ndarray y):
     print('preg (%d,%d)'%(preg.shape[0],preg.shape[1]), preg)
     print('y (%d)'%(y.shape[0]), y)
     print('gmma (%d)'%(gmma.shape[0]), gmma)
+
+    print('sum col preg (should be a unitary vector!)', preg.sum(1))
 
     #print(preg.sum(1))
     #print(preg.sum(0))
@@ -348,7 +363,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                 n_constant_features = stack_record.n_constant_features
 
                 n_node_samples = end - start
-                curr_path = <Coord *> malloc(depth * sizeof(Coord))
+                curr_path = <Coord *> malloc((depth+1) * sizeof(Coord))
                 tree._get_parent_path(curr_path, parent, depth, is_left)
 
                 splitter.node_reset(start, end, &weighted_n_node_samples, curr_path, 0)
@@ -428,7 +443,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
         # For prediction create Pr matrix for X
         safe_realloc(&tree.preg, n_samples * tree.n_regions)
-        tree._compute_preg(tree.preg, splitter.X, tree.n_samples)
+        tree._compute_preg(tree.preg, splitter.X, tree.n_samples, 1)
 
 
         # Compute sigma
@@ -566,7 +581,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                 curr_region = stack_record.curr_region
 
                 n_node_samples = end - start
-                curr_path = <Coord *> malloc(depth * sizeof(Coord))
+                curr_path = <Coord *> malloc((depth+1) * sizeof(Coord))
                 tree._get_parent_path(curr_path, parent, depth, is_left)
 
                 splitter.node_reset(start, end, &weighted_n_node_samples, curr_path, curr_region)
@@ -592,8 +607,9 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
 
                 if not is_leaf:
-                    #splitter.node_split(impurity, &split, &n_constant_features)
-                    splitter.node_split(1e6, &split, &n_constant_features)
+                    splitter.node_split(impurity, &split, &n_constant_features)
+                    #splitter.node_split(1e6, &split, &n_constant_features)
+
                     # If EPSILON=0 in the below comparison, float precision
                     # issues stop splitting, producing trees that are
                     # dissimilar to v0.18
@@ -657,7 +673,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
         
         # For prediction create Pr matrix for X
         safe_realloc(&tree.preg, n_samples * tree.n_regions)
-        tree._compute_preg(tree.preg, splitter.X, tree.n_samples)
+        tree._compute_preg(tree.preg, splitter.X, tree.n_samples, 1)
 
 
         # Compute sigma
@@ -1166,7 +1182,7 @@ cdef class Tree:
         self.capacity = capacity
         return 0
 
-    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples):
+    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples, int verbose):
         ''' Warning will not work with multiple output AND extra weight. '''
 
         #cdef DTYPE_t* X = <DTYPE_t*>X
@@ -1188,13 +1204,21 @@ cdef class Tree:
 
         # Get path/length of regions
         i = 0
+        cdef int cpt_region = 0
         for nid in range(self.node_count):
             node = &self.nodes[nid]
             if node.left_child == _TREE_LEAF:
+                if verbose == 1:
+                    printf('Region_%d: ', cpt_region)
                 for f in range(n_features):
                     left_f, right_f = feat_bound(node.path, f)
                     regions[i, f, 0] = left_f
                     regions[i, f, 1] = right_f
+                    if verbose == 1:
+                        printf('%d: %f -- %f, ', f, left_f, right_f)
+                if verbose == 1:
+                    printf('\n')
+                cpt_region += 1
                 i += 1
 
         for i in range(n_samples):
@@ -1208,41 +1232,56 @@ cdef class Tree:
                     #printf('region %d, feature %d, pr: %f -- left: %f   right: %f\n', k, f, _pb,
                     #      left_f, right_f) 
                     
+                    #if _pb <= EPSILON:
+                    #    _pb = EPSILON
                     pb = pb * _pb
                 preg[i*self.n_regions + k] = pb
-
 
         #free(paths)
         return 0
 
 
     cdef int _get_parent_path(self, Coord* path,  SIZE_t parent_id, SIZE_t depth, bint is_left)  nogil except -1:
-        
-        cdef Node* parent = &self.nodes[parent_id]
 
         #safe_realloc(&node.path, depth)
         #path = <Coord *> malloc(depth * sizeof(Coord))
-
+        
+        cdef Node* parent
         cdef Coord* coord
         cdef bint curr_is_left = is_left
 
-        cdef SIZE_t i
-        for i in range(0, depth):
+        if parent_id ==_TREE_UNDEFINED:
+            coord  = &path[0]
+            coord.is_left = curr_is_left
+            coord.is_root = True
+            coord.is_end = True
+            return 0
+
+        else:
+            parent = &self.nodes[parent_id]
+
+
+        cdef SIZE_t i = 0
+        #for i in range(0, depth):
+        while True:
             coord  = &path[i]
 
+            coord.is_root = False
             coord.is_left = curr_is_left
-
             coord.feature = parent.feature
             coord.threshold = parent.threshold
 
-            if i == depth-1:
-                coord.is_root = True
+            #if i == depth-1:
+            if parent.parent == _TREE_UNDEFINED  :
+                coord.is_end = True
                 break
             else:
-                coord.is_root = False
+                coord.is_end = False
 
             curr_is_left = parent.is_left
             parent = &self.nodes[parent.parent]
+
+            i += 1
 
         return 0
 
@@ -1275,8 +1314,6 @@ cdef class Tree:
             else:
                 self.nodes[parent].right_child = node_id
 
-            node.parent = parent
-
         node.is_left = is_left
         node.parent = parent
         node.path = NULL
@@ -1285,7 +1322,6 @@ cdef class Tree:
             node.left_child = _TREE_LEAF
             node.right_child = _TREE_LEAF
             node.feature = _TREE_UNDEFINED
-            node.threshold = _TREE_UNDEFINED
 
         else:
             # left_child and right_child will be set later
@@ -1334,7 +1370,7 @@ cdef class Tree:
         safe_realloc(&preg_x, n_samples * self.n_regions)
 
 
-        self._compute_preg(preg_x, X_ptr, n_samples)
+        self._compute_preg(preg_x, X_ptr, n_samples, 0)
 
         for i in range(n_samples):
 

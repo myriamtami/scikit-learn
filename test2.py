@@ -12,6 +12,7 @@ if __name__ == '__main__':
     # Gen data
     #sigmas = 0.00000001
     sigmas = 1
+    #sigmas = 10
     X = np.sort(5 * np.random.rand(80, 1), axis=0)
     y = np.sin(X).ravel()
     #X = np.asarray((X[:,0],X[:,0]+1)).T

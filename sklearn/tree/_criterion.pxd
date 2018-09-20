@@ -23,6 +23,7 @@ cdef struct Coord:
     SIZE_t feature
     DOUBLE_t threshold
     bint is_root
+    bint is_end
 
 cdef class Criterion:
     # The criterion computes the impurity of a node and the reduction of

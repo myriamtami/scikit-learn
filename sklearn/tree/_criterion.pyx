@@ -250,38 +250,44 @@ cdef class Criterion:
     cdef inline feat_bound(self, Coord* path, SIZE_t feature):
         ''' Return the uni-dimensional region length for the given feature. '''
 
-        cdef bint is_left = path[0].is_left
-        cdef DOUBLE_t thr_a = path[0].threshold
+        if path[0].is_root:
+            return -INFINITY, INFINITY
+
+        cdef bint is_left
+        cdef DOUBLE_t thr_a
         cdef DOUBLE_t thr_b
 
-        if is_left:
-            thr_b = -INFINITY
-        else:
-            thr_b = INFINITY
-
-        cdef int i = 1
-        cdef int j = 0
+        cdef int i = 0
+        cdef bint first = True
 
         while True:
 
-            while path[j].feature != feature:
-                j += 1
+            while path[i].feature != feature:
                 i += 1
-                is_left = path[j].is_left
-                thr_a = path[j].threshold
+
+                if path[i].is_end:
+                    break
+
+            if path[i].feature != feature:
+                return -INFINITY, INFINITY
+            elif first:
+                first = False
+                is_left = path[i].is_left
+                thr_a = path[i].threshold
 
                 if is_left:
                     thr_b = -INFINITY
                 else:
                     thr_b = INFINITY
 
-                if path[j].is_root:
+                if path[i].is_end:
                     break
 
-            if path[j].feature != feature:
-                return -INFINITY, INFINITY
+                i += 1
+                continue
 
             if path[i].feature == feature:
+
                 if is_left:
                     if path[i].threshold < thr_a and path[i].threshold > thr_b:
                         thr_b = path[i].threshold
@@ -289,16 +295,16 @@ cdef class Criterion:
                     if path[i].threshold > thr_a and path[i].threshold < thr_b:
                         thr_b = path[i].threshold
 
-            if path[i].is_root:
+            if path[i].is_end:
                 break
             else:
                 i += 1
 
         if is_left:
-            #print(thr_b, thr_a)
+            #printf("(%f, %f)\n", thr_b, thr_a)
             return thr_b, thr_a
         else:
-            #print(thr_a, thr_b)
+            #printf("(%f, %f)\n", thr_a, thr_b)
             return thr_a, thr_b
 
 

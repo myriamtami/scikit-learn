@@ -25,6 +25,7 @@ cdef struct Coord:
     SIZE_t feature
     DOUBLE_t threshold
     bint is_root
+    bint is_end
 
 
 cdef struct SplitRecord:
