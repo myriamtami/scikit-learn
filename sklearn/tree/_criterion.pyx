@@ -1803,15 +1803,22 @@ cdef class MSEPROB_QUANT(MSEPROB):
             preg = np.asarray(self.preg)
             _y = np.asarray(y)
             #gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
-            gmma = QuantReg(_y, preg).fit(0.5).params
-            self.gmma = gmma
+            try:
+                gmma = QuantReg(_y, preg).fit(0.5).params
+                self.gmma = gmma
 
-            for i in range(self.n_samples):
-                vi = preg[i].dot(gmma)
-                if self.y[i]-vi > 0:
-                    self.fn += self._alpha*np.abs(self.y[i]-vi)
-                else:
-                    self.fn += (1-self._alpha)*np.abs(self.y[i]-vi)
+                print("quantile computation...")
+                for i in range(self.n_samples):
+                    vi = preg[i].dot(gmma)
+                    if self.y[i]-vi > 0:
+                        self.fn += self._alpha*np.abs(self.y[i]-vi)
+                    else:
+                        self.fn += (1-self._alpha)*np.abs(self.y[i]-vi)
+            except:
+                print("exception quantile. Fall back on matrix inversion")
+                gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+                self.gmma = gmma
+
 
             self.fn = self.fn / self.n_samples
           
