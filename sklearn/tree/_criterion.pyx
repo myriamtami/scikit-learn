@@ -266,12 +266,11 @@ cdef class Criterion:
             while path[i].feature != feature:
 
                 if path[i].is_end:
-                    double_break = True
                     break
 
                 i += 1
 
-            if path[i].feature != feature or double_break:
+            if path[i].feature != feature:
                 return -INFINITY, INFINITY
             elif first:
                 first = False
@@ -289,9 +288,7 @@ cdef class Criterion:
                 i += 1
                 continue
 
-
             if path[i].feature == feature:
-
                 if is_left:
                     if path[i].threshold < thr_a and path[i].threshold > thr_b:
                         thr_b = path[i].threshold
@@ -1582,7 +1579,6 @@ cdef class MSEPROB(RegressionCriterion):
     cdef int reset(self) nogil except -1:
         RegressionCriterion.reset(self)
 
-        self.fn = 1e6
 
     cdef int reset2(self) nogil except -1:
         cdef int n_regions = self.gmma.shape[0]
@@ -1698,14 +1694,7 @@ cdef class MSEPROB(RegressionCriterion):
         """Evaluate the impurity of the current node, i.e. the impurity of
            samples[start:end]."""
 
-        cdef int i
-        cdef double impurity = 0
-
-        for i in range(self.n_samples):
-            impurity += self.y[i]**2
-
         return 1e6
-        #return impurity / self.n_samples
 
 
     cdef void children_impurity(self, double* impurity_left,

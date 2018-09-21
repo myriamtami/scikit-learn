@@ -126,12 +126,11 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
         while path[i].feature != feature:
 
             if path[i].is_end:
-                double_break = True
                 break
 
             i += 1
 
-        if path[i].feature != feature or double_break:
+        if path[i].feature != feature:
             return -INFINITY, INFINITY
         elif first:
             first = False
@@ -149,9 +148,7 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
             i += 1
             continue
 
-
         if path[i].feature == feature:
-
             if is_left:
                 if path[i].threshold < thr_a and path[i].threshold > thr_b:
                     thr_b = path[i].threshold
@@ -610,6 +607,9 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                     # If EPSILON=0 in the below comparison, float precision
                     # issues stop splitting, producing trees that are
                     # dissimilar to v0.18
+                    
+                    #with gil:
+                    #    printf('Heere improvment: %f\n', split.improvement)
                     is_leaf = (is_leaf or split.pos >= end or
                                (split.improvement + EPSILON <
                                 min_impurity_decrease))
@@ -645,7 +645,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
                     # Push right child on stack
                     rc = queue.push(split.pos, end, depth + 1, node_id, 0,
-                                    split.impurity_right, n_constant_features, tree.n_regions)
+                                    split.impurity_right, n_constant_features, tree.n_regions-1)
 
                     if rc == -1:
                         break

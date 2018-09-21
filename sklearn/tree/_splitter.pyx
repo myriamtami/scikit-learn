@@ -15,6 +15,8 @@
 #
 # License: BSD 3 clause
 
+from libc.stdio cimport printf
+
 from ._criterion cimport Criterion
 
 from libc.stdlib cimport free
@@ -1883,11 +1885,14 @@ cdef class BestSplitterProb(BaseDenseSplitter):
                             self.criterion.update2(current.pos, current.feature, threshold)
                             current_proxy_improvement = self.criterion.impurity_improvement(impurity)
 
-                            #self.criterion.update(current.pos)
+                            self.criterion.update(current.pos)
                             # Reject if min_weight_leaf is not satisfied
-                            #if ((self.criterion.weighted_n_left < min_weight_leaf) or
-                            #        (self.criterion.weighted_n_right < min_weight_leaf)):
-                            #    continue
+                            if ((self.criterion.weighted_n_left < min_weight_leaf) or
+                                    (self.criterion.weighted_n_right < min_weight_leaf)):
+                                self.criterion.reset2()
+                                with gil:
+                                    printf('aaaaaaaaaaaaaaaaaaaaaaaaaa\n')
+                                continue
                             #current_proxy_improvement = self.criterion.proxy_impurity_improvement()
 
 
