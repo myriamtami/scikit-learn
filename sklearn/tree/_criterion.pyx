@@ -259,16 +259,19 @@ cdef class Criterion:
 
         cdef int i = 0
         cdef bint first = True
+        cdef bint double_break = False
 
         while True:
 
             while path[i].feature != feature:
-                i += 1
 
                 if path[i].is_end:
+                    double_break = True
                     break
 
-            if path[i].feature != feature:
+                i += 1
+
+            if path[i].feature != feature or double_break:
                 return -INFINITY, INFINITY
             elif first:
                 first = False
@@ -285,6 +288,7 @@ cdef class Criterion:
 
                 i += 1
                 continue
+
 
             if path[i].feature == feature:
 

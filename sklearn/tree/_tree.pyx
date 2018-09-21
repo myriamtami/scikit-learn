@@ -119,16 +119,19 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
 
     cdef int i = 0
     cdef bint first = True
+    cdef bint double_break = False
 
     while True:
 
         while path[i].feature != feature:
-            i += 1
 
             if path[i].is_end:
+                double_break = True
                 break
 
-        if path[i].feature != feature:
+            i += 1
+
+        if path[i].feature != feature or double_break:
             return -INFINITY, INFINITY
         elif first:
             first = False
@@ -155,12 +158,6 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
             else:
                 if path[i].threshold > thr_a and path[i].threshold < thr_b:
                     thr_b = path[i].threshold
-
-            # For debug; can be removed
-            if -EPSILON <= thr_b <= EPSILON or -EPSILON <= thr_a <= EPSILON:
-                printf('heeeeeeeeeereeeeeee\n')
-                print('laaaaa', i, is_left, path[i] )
-                printf('%d\n',  &path[0])
 
         if path[i].is_end:
             break
@@ -363,7 +360,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                 n_constant_features = stack_record.n_constant_features
 
                 n_node_samples = end - start
-                curr_path = <Coord *> malloc((depth+1) * sizeof(Coord))
+                curr_path = <Coord *> malloc((depth or 1) * sizeof(Coord))
                 tree._get_parent_path(curr_path, parent, depth, is_left)
 
                 splitter.node_reset(start, end, &weighted_n_node_samples, curr_path, 0)
@@ -1255,6 +1252,8 @@ cdef class Tree:
             coord.is_left = curr_is_left
             coord.is_root = True
             coord.is_end = True
+            #coord.feature = _TREE_UNDEFINED
+            #coord.threshold = -42
             return 0
 
         else:
