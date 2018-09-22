@@ -259,18 +259,15 @@ cdef class Criterion:
 
         cdef int i = 0
         cdef bint first = True
-        cdef bint double_break = False
 
         while True:
 
             while path[i].feature != feature:
-
                 if path[i].is_end:
                     break
-
                 i += 1
 
-            if path[i].feature != feature:
+            if path[i].feature != feature and first == True:
                 return -INFINITY, INFINITY
             elif first:
                 first = False
@@ -1555,9 +1552,6 @@ cdef class MSEPROB(RegressionCriterion):
         self.sigmas = NULL
 
         self.preg = np.zeros((self.n_samples,1), dtype=np.float64)
-        self.gmma = np.zeros(1, dtype=np.float64)
-
-        self.gmma_back = np.zeros(self.gmma.shape[0], dtype=np.float64)
         self.preg_back_r = np.zeros(self.n_samples, dtype=np.float64)
 
 
@@ -1570,7 +1564,7 @@ cdef class MSEPROB(RegressionCriterion):
 
 
         # Warning: n_output>1 not supported
-        printf('init criterion. n_samples: %d, n_outputs: %d\n', self.n_samples, self.n_outputs)
+        #printf('init criterion. n_samples: %d, n_outputs: %d\n', self.n_samples, self.n_outputs)
 
         self.reset()
 
@@ -1581,12 +1575,11 @@ cdef class MSEPROB(RegressionCriterion):
 
 
     cdef int reset2(self) nogil except -1:
-        cdef int n_regions = self.gmma.shape[0]
 
         with gil:
-            self.gmma = self.gmma_back.copy()
+            #self.gmma = self.gmma_back.copy()
             self.preg[:, self.region] = self.preg_back_r
-            self.preg = np.delete(self.preg, n_regions-1, axis=1)
+            self.preg = np.delete(self.preg, self.preg.shape[1]-1, axis=1)
 
     # Called juste after init()
     cdef int _set_region(self, SIZE_t region, Coord* path) nogil except -1:
@@ -1596,10 +1589,8 @@ cdef class MSEPROB(RegressionCriterion):
         cdef int f
 
         with gil:
-            self.gmma_back = np.zeros(self.gmma.shape[0], dtype=np.float64)
             self.preg_back_r = np.zeros(self.n_samples, dtype=np.float64)
 
-            self.gmma_back[:] = self.gmma
             self.preg_back_r[:] = self.preg[:, region]
 
             self.region_bounds = np.zeros((self.n_features, 2), dtype=np.float64)
@@ -1641,7 +1632,7 @@ cdef class MSEPROB(RegressionCriterion):
 
         with gil:
 
-            n_regions = self.gmma.shape[1]
+            n_regions = self.preg.shape[1]
             left_region = np.ones(self.n_samples, dtype=np.float64)
             right_region = np.ones(self.n_samples, dtype=np.float64)
             #y = <DOUBLE_t[self.n_samples]> self.y # @debug multiple output

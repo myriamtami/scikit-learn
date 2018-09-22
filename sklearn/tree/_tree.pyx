@@ -119,18 +119,15 @@ cdef inline feat_bound(Coord* path, SIZE_t feature):
 
     cdef int i = 0
     cdef bint first = True
-    cdef bint double_break = False
 
     while True:
 
         while path[i].feature != feature:
-
             if path[i].is_end:
                 break
-
             i += 1
 
-        if path[i].feature != feature:
+        if path[i].feature != feature and first == True:
             return -INFINITY, INFINITY
         elif first:
             first = False
@@ -621,6 +618,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                                          split.threshold, impurity, n_node_samples,
                                          weighted_n_node_samples)
 
+                #printf('nid/parent: %d/%d, is_left: %d, curr_region: %d, feat/tresh: %d/%f\n',node_id, parent, is_left, curr_region, split.feature, split.threshold)
                 
 
                 if node_id == <SIZE_t>(-1):
@@ -1271,7 +1269,7 @@ cdef class Tree:
             coord.threshold = parent.threshold
 
             #if i == depth-1:
-            if parent.parent == _TREE_UNDEFINED  :
+            if parent.parent == _TREE_UNDEFINED:
                 coord.is_end = True
                 break
             else:
