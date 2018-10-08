@@ -352,7 +352,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         if not isinstance(self.splitter, Splitter):
             if self.criterion in  ('mseprob', 'mseprob_quantile'):
                 if self.splitter != 'bestprob':
-                    print('Setting splitter to best split "best2" for probababilistic tree.')
+                    print('Setting splitter to best split "best2" for probabilistic tree.')
                     self.splitter = 'bestprob'
 
             splitter = SPLITTERS[self.splitter](criterion,

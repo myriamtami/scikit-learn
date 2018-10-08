@@ -1224,14 +1224,21 @@ cdef class Tree:
                     left_f, right_f = regions[k, f]
                     _pb = prob_region(X[X_sample_stride*i + f*X_feature_stride], 
                                       left_f, right_f, sigma)
+                    printf('%d %d: %d %d:  %f ', i,  X_sample_stride, f, X_feature_stride, X[X_sample_stride*i + f*X_feature_stride])
                     #printf('region %d, feature %d, pr: %f -- left: %f   right: %f\n', k, f, _pb,
                     #      left_f, right_f) 
                     
                     #if _pb <= EPSILON:
                     #    _pb = EPSILON
                     pb = pb * _pb
+                    printf('\n')
                 preg[i*self.n_regions + k] = pb
+            printf('\n')
 
+        for i in range(n_samples):
+            for k in range(self.n_regions):
+                printf('%f ', preg[i*self.n_regions + k])
+            printf('\n')
         #free(paths)
         return 0
 
@@ -1368,7 +1375,7 @@ cdef class Tree:
 
 
         self._compute_preg(preg_x, X_ptr, n_samples, 0)
-
+        
         for i in range(n_samples):
 
             for k in range(self.n_regions):
@@ -1377,8 +1384,11 @@ cdef class Tree:
                 #       X_ptr[X_sample_stride*i], 
                 #       k,  self.gmma[k],  preg_x[i*self.X_sample_stride + k])
 
+                printf('(%d, %d, %f)\n', i, k, self.gmma[k]) 
                 predictions[i] += self.gmma[k] * preg_x[i*self.n_regions + k]
-
+                printf('temp prediction %f\n', predictions[i])
+                #Test prediction values
+            printf('predictions_i for i %d prediction %f\n', i,   predictions[i])
         return predictions_arr
 
     cpdef np.ndarray apply(self, object X):
