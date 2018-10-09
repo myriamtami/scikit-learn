@@ -385,7 +385,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                                          split.threshold, impurity, n_node_samples,
                                          weighted_n_node_samples)
 
-                
+
 
                 if node_id == <SIZE_t>(-1):
                     rc = -1
@@ -398,7 +398,7 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
 
 
                 if not is_leaf:
-                    
+
                     #free(curr_path)
 
                     # Push right child on stack
@@ -428,18 +428,17 @@ cdef class DepthFirstTreeBuilder(TreeBuilder):
                 tree.max_depth = max_depth_seen
 
             # end of while
-            
+
         # end of nogil
-        
+
 
         # For prediction create Pr matrix for X
         safe_realloc(&tree.preg, n_samples * tree.n_regions)
-        tree._compute_preg(tree.preg, splitter.X, tree.n_samples, 1)
-
+        tree._compute_preg(tree.preg, splitter.X, splitter.X_sample_stride, splitter.X_feature_stride, tree.n_samples, 1)
 
         # Compute sigma
         cdef np.ndarray gmma
-        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
+        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples],
                              tree._get_y_ndarray()[:tree.n_samples])
 
         safe_realloc(&tree.gmma, tree.n_regions)
@@ -604,7 +603,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                     # If EPSILON=0 in the below comparison, float precision
                     # issues stop splitting, producing trees that are
                     # dissimilar to v0.18
-                    
+
                     #with gil:
                     #    printf('Heere improvment: %f\n', split.improvement)
                     is_leaf = (is_leaf or split.pos >= end or
@@ -619,7 +618,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                                          weighted_n_node_samples)
 
                 #printf('nid/parent: %d/%d, is_left: %d, curr_region: %d, feat/tresh: %d/%f\n',node_id, parent, is_left, curr_region, split.feature, split.threshold)
-                
+
 
                 if node_id == <SIZE_t>(-1):
                     rc = -1
@@ -632,7 +631,7 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
 
 
                 if not is_leaf:
-                    
+
                     #free(curr_path)
 
                     # Push left child on stack
@@ -663,17 +662,17 @@ cdef class BreadthFirstTreeBuilder(TreeBuilder):
                 tree.max_depth = max_depth_seen
 
             # end of while
-            
+
         # end of nogil
-        
+
         # For prediction create Pr matrix for X
         safe_realloc(&tree.preg, n_samples * tree.n_regions)
-        tree._compute_preg(tree.preg, splitter.X, tree.n_samples, 1)
+        tree._compute_preg(tree.preg, splitter.X, splitter.X_sample_stride, splitter.X_feature_stride, tree.n_samples, 1)
 
 
         # Compute sigma
         cdef np.ndarray gmma
-        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples], 
+        gmma = compute_gamma(tree._get_preg_ndarray()[:tree.n_samples],
                              tree._get_y_ndarray()[:tree.n_samples])
 
         safe_realloc(&tree.gmma, tree.n_regions)
@@ -1062,7 +1061,7 @@ cdef class Tree:
         self.X_sample_stride = X_sample_stride
         self.X_feature_stride = X_feature_stride
 
-        # I don't get why the first value of y (y[O] is lost 
+        # I don't get why the first value of y (y[O] is lost
         # when y is not deep copied ?!
         safe_realloc(&self.y, self.n_samples)
         memcpy(self.y, y, sizeof(DOUBLE_t)*self.n_samples)
@@ -1177,14 +1176,13 @@ cdef class Tree:
         self.capacity = capacity
         return 0
 
-    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t n_samples, int verbose):
+    cdef int _compute_preg(self, DOUBLE_t* preg,  DTYPE_t* X, SIZE_t X_sample_stride, SIZE_t X_feature_stride, SIZE_t n_samples, int verbose):
         ''' Warning will not work with multiple output AND extra weight. '''
 
         #cdef DTYPE_t* X = <DTYPE_t*>X
 
         cdef SIZE_t n_features = self.n_features
-        cdef SIZE_t X_sample_stride = self.X_sample_stride
-        cdef SIZE_t X_feature_stride = self.X_feature_stride
+
         cdef Node* node = NULL
 
         # Save this in self to be faster.
@@ -1222,11 +1220,11 @@ cdef class Tree:
                 for f in range(n_features):
                     sigma = self.sigmas[f]
                     left_f, right_f = regions[k, f]
-                    _pb = prob_region(X[X_sample_stride*i + f*X_feature_stride], 
+                    _pb = prob_region(X[X_sample_stride*i + f*X_feature_stride],
                                       left_f, right_f, sigma)
                     #printf('region %d, feature %d, pr: %f -- left: %f   right: %f\n', k, f, _pb,
-                    #      left_f, right_f) 
-                    
+                    #      left_f, right_f)
+
                     #if _pb <= EPSILON:
                     #    _pb = EPSILON
                     pb = pb * _pb
@@ -1240,7 +1238,7 @@ cdef class Tree:
 
         #safe_realloc(&node.path, depth)
         #path = <Coord *> malloc(depth * sizeof(Coord))
-        
+
         cdef Node* parent
         cdef Coord* coord
         cdef bint curr_is_left = is_left
@@ -1282,7 +1280,7 @@ cdef class Tree:
 
         return 0
 
-        
+
 
     cdef SIZE_t _add_node(self, SIZE_t parent, bint is_left, bint is_leaf,
                           SIZE_t feature, double threshold, double impurity,
@@ -1367,14 +1365,14 @@ cdef class Tree:
         safe_realloc(&preg_x, n_samples * self.n_regions)
 
 
-        self._compute_preg(preg_x, X_ptr, n_samples, 0)
+        self._compute_preg(preg_x, X_ptr, X_sample_stride, X_fx_stride, n_samples, 0)
 
         for i in range(n_samples):
 
             for k in range(self.n_regions):
 
-                #printf('final: x%d:%f,  gmma%d:%f, pr:%f \n', i, 
-                #       X_ptr[X_sample_stride*i], 
+                #printf('final: x%d:%f,  gmma%d:%f, pr:%f \n', i,
+                #       X_ptr[X_sample_stride*i],
                 #       k,  self.gmma[k],  preg_x[i*self.X_sample_stride + k])
 
                 predictions[i] += self.gmma[k] * preg_x[i*self.n_regions + k]
@@ -1414,7 +1412,7 @@ cdef class Tree:
         cdef Node* node = NULL
         cdef SIZE_t i = 0
 
-        cdef Coord* path 
+        cdef Coord* path
 
         with nogil:
             for i in range(n_samples):
