@@ -107,7 +107,7 @@ cdef class Tree:
 
     cdef int _get_parent_path(self, Coord* path, SIZE_t parent, SIZE_t depth, bint is_left)  nogil except -1
     cdef int extra_init(self, SIZE_t X_sample_stride, SIZE_t X_feature_stride, DOUBLE_t* y)
-    cdef int _compute_preg(self, DOUBLE_t* preg, DTYPE_t* X, SIZE_t n_samples, int verbose)
+    cdef int _compute_preg(self, DOUBLE_t* preg, DTYPE_t* X, SIZE_t X_sample_stride, SIZE_t X_feature_stride, SIZE_t n_samples, int verbose)
     cpdef yaaa(self)
 
 
