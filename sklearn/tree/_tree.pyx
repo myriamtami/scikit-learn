@@ -179,12 +179,14 @@ def prob_region(double x, double left_f, double right_f,  DOUBLE_t sigma):
 
 def compute_gamma(np.ndarray preg, np.ndarray y):
     gmma = np.linalg.pinv(preg.T.dot(preg)).dot(preg.T).dot(y)
+    ################################################################
+    ### Soulager le temps de calcul en enlevant les prints #NOV 2018
+    ################################################################
+    ###print('preg (%d,%d)'%(preg.shape[0],preg.shape[1]), preg)
+    ###print('y (%d)'%(y.shape[0]), y)
+    ###print('gmma (%d)'%(gmma.shape[0]), gmma)
 
-    print('preg (%d,%d)'%(preg.shape[0],preg.shape[1]), preg)
-    print('y (%d)'%(y.shape[0]), y)
-    print('gmma (%d)'%(gmma.shape[0]), gmma)
-
-    print('sum col preg (should be a unitary vector!)', preg.sum(1))
+    ###print('sum col preg (should be a unitary vector!)', preg.sum(1))
 
     #print(preg.sum(1))
     #print(preg.sum(0))
@@ -1201,16 +1203,22 @@ cdef class Tree:
         for nid in range(self.node_count):
             node = &self.nodes[nid]
             if node.left_child == _TREE_LEAF:
-                if verbose == 1:
-                    printf('Region_%d: ', cpt_region)
+                ####################################################
+                ### Soulager temps calculs en enlevants les prints #NOV 2018
+                ####################################################
+                ###if verbose == 1:
+                    ###printf('Region_%d: ', cpt_region)
                 for f in range(n_features):
                     left_f, right_f = feat_bound(node.path, f)
                     regions[i, f, 0] = left_f
                     regions[i, f, 1] = right_f
-                    if verbose == 1:
-                        printf('%d: %f -- %f, ', f, left_f, right_f)
-                if verbose == 1:
-                    printf('\n')
+                    ################################################################
+                    ### Soulager temps calculs en enlevants les prints des regions #NOV 2018
+                    ################################################################
+                    ###if verbose == 1:
+                        ###printf('%d: %f -- %f, ', f, left_f, right_f)
+                ###if verbose == 1:
+                    ###printf('\n')
                 cpt_region += 1
                 i += 1
 
@@ -1222,21 +1230,31 @@ cdef class Tree:
                     left_f, right_f = regions[k, f]
                     _pb = prob_region(X[X_sample_stride*i + f*X_feature_stride],
                                       left_f, right_f, sigma)
-                    printf('%d %d: %d %d:  %f ', i,  X_sample_stride, f, X_feature_stride, X[X_sample_stride*i + f*X_feature_stride])
+                    ###############################################################
+                    ### Soulager temps de calcul en enlevant les prints des regions #NOV 2018
+                    ###############################################################
+                    ###printf('%d %d: %d %d:  %f ', i,  X_sample_stride, f, X_feature_stride, X[X_sample_stride*i + f*X_feature_stride])
+                    
                     #printf('region %d, feature %d, pr: %f -- left: %f   right: %f\n', k, f, _pb,
                     #      left_f, right_f)
 
                     #if _pb <= EPSILON:
                     #    _pb = EPSILON
                     pb = pb * _pb
-                    printf('\n')
+                    ###############################################################
+                    ### Soulager temps de calcul en enlevant les prints des regions #NOV 2018
+                    ###############################################################
+                    ###printf('\n')
                 preg[i*self.n_regions + k] = pb
-            printf('\n')
-
-        for i in range(n_samples):
-            for k in range(self.n_regions):
-                printf('%f ', preg[i*self.n_regions + k])
-            printf('\n')
+            ### Soulager temps de calcul en enlevant les prints des regions #NOV 2018
+            ###printf('\n')
+        ###############################################################
+        ### Soulager temps de calcul en enlevant les prints des regions #NOV 2018
+        ###############################################################
+        ###for i in range(n_samples):
+            ###for k in range(self.n_regions):
+                ###printf('%f ', preg[i*self.n_regions + k])
+            ###printf('\n')
         #free(paths)
         return 0
 
@@ -1373,6 +1391,8 @@ cdef class Tree:
 
         self._compute_preg(preg_x, X_ptr, X_sample_stride, X_fx_stride, n_samples, 0)
 
+        #self.X_feature_stride = n_samples
+        
         for i in range(n_samples):
 
             for k in range(self.n_regions):
@@ -1380,12 +1400,13 @@ cdef class Tree:
                 #printf('final: x%d:%f,  gmma%d:%f, pr:%f \n', i,
                 #       X_ptr[X_sample_stride*i],
                 #       k,  self.gmma[k],  preg_x[i*self.X_sample_stride + k])
-
-                printf('(%d, %d, %f)\n', i, k, self.gmma[k]) 
-                predictions[i] += self.gmma[k] * preg_x[i*self.n_regions + k]
-                printf('temp prediction %f\n', predictions[i])
+                
                 #Test prediction values
-            printf('predictions_i for i %d prediction %f\n', i,   predictions[i])
+                ##printf('(%d, %d, %f)\n', i, k, self.gmma[k]) 
+                predictions[i] += self.gmma[k] * preg_x[i*self.n_regions + k]
+                ##printf('temp prediction %f\n', predictions[i])
+                #Test prediction values
+            ##printf('predictions_i for i %d prediction %f\n', i,   predictions[i])
         return predictions_arr
 
     cpdef np.ndarray apply(self, object X):
