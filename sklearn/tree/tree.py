@@ -64,7 +64,8 @@ CRITERIA_REG = {"mse": _criterion.MSE, "friedman_mse": _criterion.FriedmanMSE, "
 
 DENSE_SPLITTERS = {"best": _splitter.BestSplitter,
                    "random": _splitter.RandomSplitter,
-                   "bestprob": _splitter.BestSplitterProb
+                   "bestprob": _splitter.BestSplitterProb,
+                   "randomprob": _splitter.RandomSplitterProb# random split for Un trees
                   }
 
 SPARSE_SPLITTERS = {"best": _splitter.BestSparseSplitter,
@@ -347,13 +348,17 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
             #    # Cant' access criterion.P_reg ?!
 
         SPLITTERS = SPARSE_SPLITTERS if issparse(X) else DENSE_SPLITTERS
-
+        #Zone retouchee pour randomprob
         splitter = self.splitter
         if not isinstance(self.splitter, Splitter):
             if self.criterion in  ('mseprob', 'mseprob_quantile'):
-                if self.splitter != 'bestprob':
-                    print('Setting splitter to best split "best2" for probabilistic tree.')
+                #if self.splitter != 'bestprob':
+                if self.splitter == 'best':
+                    print('Setting splitter to best split "bestprob" for uncertain tree.')
                     self.splitter = 'bestprob'
+                if self.splitter == 'random':
+                    print('Setting splitter to random split "randomprob" for uncertain tree.')
+                    self.splitter = 'randomprob'
 
             splitter = SPLITTERS[self.splitter](criterion,
                                                 self.max_features_,
@@ -363,7 +368,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
                                                 self.presort)
 
 
-        # for probabilistic tree
+        # for uncertain tree
         if self.tol is None:
             self.tol = np.ones(self.n_features_) * 0.5
         elif not isinstance(self.tol, np.ndarray):
@@ -379,7 +384,7 @@ class BaseDecisionTree(six.with_metaclass(ABCMeta, BaseEstimator)):
         if self.criterion in  ('mseprob', 'mseprob_quantile'):
             self.min_impurity_decrease = self.min_impurity_decrease
             #self.min_impurity_decrease = -10
-            builder = BreadthFirstTreeBuilder(splitter, min_samples_split,
+            builder = BreadthFirstTreeBuilder(splitter, min_samples_split,#For uncertain trees only breadth first builder
                                             min_samples_leaf,
                                             min_weight_leaf,
                                             max_depth,
@@ -1133,7 +1138,9 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
                  max_leaf_nodes=None,
                  min_impurity_decrease=0.,
                  min_impurity_split=None,
-                 presort=False, tol=None, _alpha=0.5):
+                 presort=False,
+                 tol=None,#add for uncertain tree
+                 _alpha=0.5):#add for uncertain tree
         super(DecisionTreeRegressor, self).__init__(
             criterion=criterion,
             splitter=splitter,
@@ -1146,7 +1153,9 @@ class DecisionTreeRegressor(BaseDecisionTree, RegressorMixin):
             random_state=random_state,
             min_impurity_decrease=min_impurity_decrease,
             min_impurity_split=min_impurity_split,
-            presort=presort, tol=tol, _alpha=_alpha)
+            presort=presort,
+            tol=tol,#add for uncertain tree
+            _alpha=_alpha)#add for uncertain tree
 
     def fit(self, X, y, sample_weight=None, check_input=True,
             X_idx_sorted=None):
