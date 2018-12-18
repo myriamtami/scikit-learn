@@ -19,7 +19,7 @@ print(sklearn.__path__)
 mt = True
 
 # Fonction multithreadé
-def multithreading_computation(queue, method_tune, X_sub_train, Y_sub_train, X_valid, Y_valid, sigmas_u, j, eta_j, min_samples_leaf_percent, max_depth, RMSE, t):
+def multithreading_computation(queue, method_tune, method_split, X_sub_train, Y_sub_train, X_valid, Y_valid, sigmas_u, j, eta_j, min_samples_leaf_percent, max_depth, RMSE, t):
 
     sigmas_temp = sigmas_u.copy()
     sigmas_temp[j] = sigmas_temp[j] + t * eta_j
@@ -34,14 +34,14 @@ def multithreading_computation(queue, method_tune, X_sub_train, Y_sub_train, X_v
         min_samples_leaf = int(np.shape(X_sub_train)[0]*min_samples_leaf_percent)#10 pourcent des observations du train c'est bien max_depth_parameter
 
     if method_tune == "Tmseprob":
-        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_temp)
+        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_temp)
         regr_Tmseprob.fit(X_sub_train, Y_sub_train)
         #PREDICTION sur valid_set
         y_Tmseprob = regr_Tmseprob.predict2(X_valid)
         RMSE_test = np.sqrt(np.mean( (Y_valid - y_Tmseprob)**2 ))
 
     elif method_tune == "TmsePredprob":
-        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_temp)
+        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_temp)
         regr_TmsePredprob.fit(X_sub_train, Y_sub_train)
         #PREDICTION sur valid_set
         y_TmsePredprob = regr_TmsePredprob.predict2(X_valid)
@@ -53,7 +53,7 @@ def multithreading_computation(queue, method_tune, X_sub_train, Y_sub_train, X_v
     queue.put(res)
 
 # Fonction Gridsearch
-def cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, passe, step, min_samples_leaf_percent, max_depth):
+def cvgridsearch(method, method_tune, method_split, X, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, passe, step, min_samples_leaf_percent, max_depth):
     #INITIALISATION
     p = np.shape(X)[1]
     n = np.shape(X)[0]
@@ -108,7 +108,7 @@ def cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold
                     print("[LOG] * sigmas_u[",elem,"]", sigmas_u[elem])
 
                 for t in range(int(T)+1):
-                    process = mp.Process(target=multithreading_computation, args=[queue, method_tune, X_sub_train, Y_sub_train, X_valid, Y_valid, sigmas_u, j, eta[j], min_samples_leaf_percent, max_depth, RMSE, t])
+                    process = mp.Process(target=multithreading_computation, args=[queue, method_tune, method_split, X_sub_train, Y_sub_train, X_valid, Y_valid, sigmas_u, j, eta[j], min_samples_leaf_percent, max_depth, RMSE, t])
                     processes.append(process)
                     process.start()
 
@@ -146,14 +146,14 @@ def cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold
                         min_samples_leaf = int(np.shape(X_sub_train)[0]*min_samples_leaf_percent)#10 pourcent des observations du train c'est bien max_depth_parameter
 
                     if method_tune == "Tmseprob":
-                        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+                        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
                         regr_Tmseprob.fit(X_sub_train, Y_sub_train)
                         #PREDICTION sur valid_set
                         y_Tmseprob = regr_Tmseprob.predict2(X_valid)
                         RMSE_test = np.sqrt(np.mean( (Y_valid - y_Tmseprob)**2 ))
 
                     elif method_tune == "TmsePredprob":
-                        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+                        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
                         regr_TmsePredprob.fit(X_sub_train, Y_sub_train)
                         #PREDICTION sur valid_set
                         y_TmsePredprob = regr_TmsePredprob.predict2(X_valid)
@@ -193,17 +193,17 @@ def cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold
 
     print(sigmas_u)
     if method == "Tmse":
-        regr_Tmse = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth)
+        regr_Tmse = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth)
         regr_Tmse.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_Tmse.predict(X_test)
     elif method == "Tmseprob":
-        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
         regr_Tmseprob.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_Tmseprob.predict2(X_test)
     elif method == "TmsePredprob":
-        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
         regr_TmsePredprob.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_TmsePredprob.predict2(X_test)
@@ -216,7 +216,7 @@ def cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold
     sigmas_u.to_csv('sigmas_u_cv.csv', sep='\t', encoding='utf-8')
 
 # Fonction Cross-validation
-def crossvalidation(sigmas_u, method, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth):
+def crossvalidation(sigmas_u, method, method_split, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth):
 
     print("[LOG] learning for sigmas_u ")
     for elem in range(0, len(sigmas_u)):
@@ -237,17 +237,17 @@ def crossvalidation(sigmas_u, method, X_train_fold, X_test_fold, Y_train_fold, Y
 
     print(sigmas_u)
     if method == "Tmse":
-        regr_Tmse = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth)
+        regr_Tmse = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth)
         regr_Tmse.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_Tmse.predict(X_test)
     elif method == "Tmseprob":
-        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+        regr_Tmseprob = tree.DecisionTreeRegressor(criterion='mseprob', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
         regr_Tmseprob.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_Tmseprob.predict2(X_test)
     elif method == "TmsePredprob":
-        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
+        regr_TmsePredprob = tree.DecisionTreeRegressor(criterion='mse', splitter=method_split, min_samples_leaf=min_samples_leaf, max_depth=max_depth, tol=sigmas_u)
         regr_TmsePredprob.fit(X_train, Y_train)
         #PREDICTION sur test_set
         y_pred = regr_TmsePredprob.predict2(X_test)
@@ -264,6 +264,7 @@ if __name__ == '__main__':
     fold = 0
     method = ''
     method_tune = ''
+    method_split = 'best'
     action = ''
     passe = 0
     step = 0
@@ -272,9 +273,9 @@ if __name__ == '__main__':
 
     #Arguments
     try:
-        opts, args = getopt.getopt(sys.argv[1:],"hi:o:u:f:m:t:a:p:s:l:d:",["ifile=","ofile=","sigmas_ufile=","fold=","method=","methodtune=","action=", "passe=", "step=","minsampleleafpercent=","maxdepth="])
+        opts, args = getopt.getopt(sys.argv[1:],"hi:o:u:f:m:t:c:a:p:s:l:d:",["ifile=","ofile=","sigmas_ufile=","fold=","method=","methodtune=","methodsplit=","action=", "passe=", "step=","minsampleleafpercent=","maxdepth="])
     except getopt.GetoptError:
-        print('uncertain_trees.py -i <inputfile> -o <outputfile> -u <sigmas_ufile> -f <fold> -m <method> -t <methodtune> -a <action> -p <passe> -s <step> -l <minsampleleafpercent> -d <maxdepth>')
+        print('uncertain_trees.py -i <inputfile> -o <outputfile> -u <sigmas_ufile> -f <fold> -m <method> -t <methodtune> -c <methodsplit> -a <action> -p <passe> -s <step> -l <minsampleleafpercent> -d <maxdepth>')
         sys.exit(2)
     for opt, arg in opts:
         print("[LOG] -----------")
@@ -289,6 +290,8 @@ if __name__ == '__main__':
             print('      Tmse | Tmseprob | TmsePredprob')
             print('-t <methodtune> Method to use during the grid search to tune the parameter sigmas_u')
             print('      Tmseprob | TmsePredprob')
+            print('-c <methodsplit> Method to use for splitting')
+            print('      best | randomprob ')
             print('-a <action> Action to do among a grid search with cross-validation to tune the parameter of uncertainty (sigma_u) or a cross validation without tuning')
             print('      cvgridsearch | cv')
             print('-p <passe> ')
@@ -297,13 +300,15 @@ if __name__ == '__main__':
             print('-d <maxdepth> ')
             print('')
             print('---- Cross validation ')
-            print('uncertain_trees.py -i <inputfile> -o <outputfile> -f <fold> -m <method> -a cv -l <minsampleleafpercent> -d <maxdepth>')
+            print('uncertain_trees.py -i <inputfile> -o <outputfile> -f <fold> -m <method> -c <methodsplit> -a cv -l <minsampleleafpercent> -d <maxdepth>')
             print('-i <inputfile> Matrix of inputs variables')
             print('-o <outputfile> Vector of target variable ')
             print('-u <sigmas_ufile> Vector sigmas_u ')
             print('-f <fold> The fold index')
             print('-m <method> Method to apply among standard regression tree (Tmse), uncertain regression tree (Tmseprob) or standard regression tree with prediction rule handling uncertain inputs (TmsePredprob)')
             print('      Tmse | Tmseprob | TmsePredprob')
+            print('-c <methodsplit> Method to use for splitting')
+            print('      best | randomprob ')
             print('-a <action> Action to do among a grid search with cross-validation to tune the parameter of uncertainty (sigma_u) or a cross validation without tuning')
             print('      cvgridsearch | cv')
             print('-l <minsampleleafpercent> ')
@@ -321,6 +326,8 @@ if __name__ == '__main__':
             method = arg
         elif opt in ("-t", "--methodtune"):
             method_tune = arg
+        elif opt in ("-c", "--methodsplit"):
+            method_split = arg
         elif opt in ("-a", "--action"):
             action = arg
         elif opt in ("-p", "--passe"):
@@ -406,12 +413,12 @@ if __name__ == '__main__':
 
     #Action
     if action == "cvgridsearch":
-        # uncertain_trees_process.py -i Xp_ozone_VC_ss_min.csv -o Y_oz.csv -f 1 -m Tmse -t TmsePredprob -a cvgridsearch -p 0 -s 5 -l 0.1 -d 0
+        # uncertain_trees_process.py -i Xp_ozone_VC_ss_min.csv -o Y_oz.csv -f 1 -m Tmse -t TmsePredprob -c randomprob -a cvgridsearch -p 0 -s 5 -l 0.1 -d 0
         print("[LOG] -----------")
         print("[LOG] Gridsearch | multithreading ", mt)
-        cvgridsearch(method, method_tune, X, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, passe, step, min_samples_leaf_percent, max_depth)
+        cvgridsearch(method, method_tune, method_split, X, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, passe, step, min_samples_leaf_percent, max_depth)
     elif action == "cv":
-        # uncertain_trees_process.py -i Xp_ozone_VC_ss_min.csv -o Y_oz.csv -u sigmas_u.csv -f 1 -m Tmse -a cv -l 0.1 -d 0
+        # uncertain_trees_process.py -i Xp_ozone_VC_ss_min.csv -o Y_oz.csv -u sigmas_u.csv -f 1 -m Tmse -c randomprob -a cv -l 0.1 -d 0
         print("[LOG] -----------")
         if sigmas_ufile == 'EmptyFile':
             print("[LOG] Cross-validation")
@@ -420,7 +427,7 @@ if __name__ == '__main__':
                 sigmas_u = pd.read_csv(fname, sep = '\t',index_col=0)
                 sigmas_u=sigmas_u.values
                 sigmas_u=sigmas_u.ravel()
-                crossvalidation(sigmas_u, method, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth)
+                crossvalidation(sigmas_u, method, method_split, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth)
             else :
                 print("[LOG] The file \"sigmas_u_cv.csv\" does not exist in the directory.")
         else :
@@ -429,7 +436,7 @@ if __name__ == '__main__':
                 sigmas_u = pd.read_csv(sigmas_ufile, sep = '\t',index_col=0)
                 sigmas_u=sigmas_u.values
                 sigmas_u=sigmas_u.ravel()
-                crossvalidation(sigmas_u, method, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth)
+                crossvalidation(sigmas_u, method, method_split, X_train_fold, X_test_fold, Y_train_fold, Y_test_fold, min_samples_leaf_percent, max_depth)
             else :
                 print("[LOG] The sigmas_u file ", sigmas_ufile, " does not exist in the directory.")
             
