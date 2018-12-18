@@ -315,17 +315,17 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble)):
                                             random_state=random_state)
                 trees.append(tree)
 
-            if hasattr(self, 'criterion') and self.criterion == 'mseprob':
-                backend = "multiprocessing"
-            else:
-                backend = "threading"
+            if hasattr(self, 'criterion') and self.criterion == 'mseprob':#add
+                backend = "multiprocessing"#add but less efficient than threading. Plan to improve
+            else:#add
+                backend = "threading"#add
 
             # Parallel loop: we use the threading backend as the Cython code
             # for fitting the trees is internally releasing the Python GIL
             # making threading always more efficient than multiprocessing in
             # that case.
             trees = Parallel(n_jobs=self.n_jobs, verbose=self.verbose,
-                             backend=backend)(
+                             backend=backend)(#modified to do not use **_joblib_parallel_args(prefer='threads')
                 delayed(_parallel_build_trees)(
                     t, self, X, y, sample_weight, i, len(trees),
                     verbose=self.verbose, class_weight=self.class_weight)
@@ -372,18 +372,20 @@ class BaseForest(six.with_metaclass(ABCMeta, BaseEnsemble)):
         check_is_fitted(self, 'estimators_')
 
         all_importances = Parallel(n_jobs=self.n_jobs,
-                                   backend="threading")(
+                                   backend="threading")(#modified. Before: **_joblib_parallel_args(prefer='threads'). Plan to improve
             delayed(getattr)(tree, 'feature_importances_')
             for tree in self.estimators_)
 
         return sum(all_importances) / len(self.estimators_)
 
 
-# This is a utility function for joblib's Parallel. It can't go locally in
-# ForestClassifier or ForestRegressor, because joblib complains that it cannot
-# pickle it when placed there.
 
 def accumulate_prediction(predict, X, out, lock):
+    """This is a utility function for joblib's Parallel.
+
+    It can't go locally in ForestClassifier or ForestRegressor, because joblib
+    complains that it cannot pickle it when placed there.
+    """
     prediction = predict(X, check_input=False)
     with lock:
         if len(out) == 1:
@@ -643,11 +645,11 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
     @abstractmethod
     def __init__(self,
                  base_estimator,
-                 n_estimators=10,
+                 n_estimators=10,#Before n_estimators=100
                  estimator_params=tuple(),
                  bootstrap=False,
                  oob_score=False,
-                 n_jobs=1,
+                 n_jobs=1,#Before n_jobs=None
                  random_state=None,
                  verbose=0,
                  warm_start=False):
@@ -693,11 +695,11 @@ class ForestRegressor(six.with_metaclass(ABCMeta, BaseForest, RegressorMixin)):
         else:
             y_hat = np.zeros((X.shape[0]), dtype=np.float64)
 
-        get_predict = lambda x, critere:getattr(x, 'predict2') if critere == 'mseprob' else getattr(x, 'predict')
+        get_predict = lambda x, critere:getattr(x, 'predict2') if critere == 'mseprob' else getattr(x, 'predict')#Add to deal with mseprob 
 
         # Parallel loop
         lock = threading.Lock()
-        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(
+        Parallel(n_jobs=n_jobs, verbose=self.verbose, backend="threading")(#before: **_joblib_parallel_args(require="sharedmem")
             delayed(accumulate_prediction)(get_predict(e, self.criterion), X, [y_hat], lock)
             #delayed(accumulate_prediction)(e.predict, X, [y_hat], lock)
             for e in self.estimators_)
@@ -1221,6 +1223,7 @@ class RandomForestRegressor(ForestRegressor):
     def __init__(self,
                  n_estimators=10,
                  criterion="mse",
+                 splitter="best",#goal: add splitter="randomsplit" usable for uncertain trees
                  max_depth=None,
                  min_samples_split=2,
                  min_samples_leaf=1,
@@ -1239,7 +1242,7 @@ class RandomForestRegressor(ForestRegressor):
         super(RandomForestRegressor, self).__init__(
             base_estimator=DecisionTreeRegressor(),
             n_estimators=n_estimators,
-            estimator_params=("criterion", "max_depth", "min_samples_split",
+            estimator_params=("criterion", "splitter", "max_depth", "min_samples_split",#splitter is added
                               "min_samples_leaf", "min_weight_fraction_leaf",
                               "max_features", "max_leaf_nodes",
                               "min_impurity_decrease", "min_impurity_split","tol",
@@ -1252,6 +1255,7 @@ class RandomForestRegressor(ForestRegressor):
             warm_start=warm_start)
 
         self.criterion = criterion
+        self.splitter = splitter#add
         self.max_depth = max_depth
         self.min_samples_split = min_samples_split
         self.min_samples_leaf = min_samples_leaf
